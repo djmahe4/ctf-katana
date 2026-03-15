@@ -1,0 +1,15 @@
+name: recon
+description: Network scanning, DNS lookup, WHOIS, and service enumeration
+inputs:
+  - target
+  - action
+  - ports
+  - record_type
+tools:
+  - nmap
+  - whois
+  - dig
+  - smbmap
+  - enum4linux
+  - gobuster
+category: recon

@@ -44,8 +44,8 @@ pip install -e ".[dev]"
 # Via the installed entry-point
 katana-server
 
-# Or via the Python module
-python -m katana
+# Or run the module directly
+python -m server.mcp_server
 ```
 
 The server communicates over **stdio**, which is the standard MCP transport.
@@ -99,10 +99,13 @@ The system follows a six-step loop to solve a challenge:
 
 ### Skill Tools (35)
 
-The MCP server exposes the following skill tools that can be called directly:
+The MCP server exposes the following skill tools that can be called directly.
+Each skill is backed by a `skills/<name>/` directory following the **Claude
+Skills** pattern (`skill.yaml` + `prompt.md` + `run.py`):
 
 | Category | Tools |
 |----------|-------|
+| **Meta** | `list_skills`, `get_skill_prompt`, `run_skill` |
 | **Knowledge** | `search_knowledge`, `get_knowledge_section`, `list_knowledge_categories` |
 | **Analysis** | `analyze_artifact`, `identify_encoding` |
 | **Crypto** | `crypto_rot13`, `crypto_caesar`, `crypto_caesar_bruteforce`, `crypto_xor_bruteforce`, `crypto_base64_decode`, `crypto_base64_encode`, `crypto_vigenere_decrypt`, `crypto_hex_decode` |
@@ -112,6 +115,19 @@ The MCP server exposes the following skill tools that can be called directly:
 | **Reversing** | `reversing_disassemble`, `reversing_symbols`, `reversing_elf_info` |
 | **Pwn** | `pwn_checksec`, `pwn_rop_gadgets`, `pwn_pattern_create`, `pwn_got` |
 | **Recon** | `recon_nmap`, `recon_whois`, `recon_dig` |
+
+#### Adding a New Skill
+
+Create a new directory under `skills/` with three files:
+
+```
+skills/my_skill/
+├── skill.yaml   # name, description, inputs, tools, category
+├── prompt.md    # LLM reasoning instructions
+└── run.py       # def run(inputs: dict) -> dict
+```
+
+The server discovers it automatically on next start.
 
 ### Agent Tools (4, Ollama-backed)
 
@@ -158,6 +174,16 @@ pytest tests/ -v
 ```
 
 ### Project Layout
+
+```
+├── server/            MCP orchestration (mcp_server.py + registry.py)
+├── skills/            Claude Skills (10 skills, each: skill.yaml + prompt.md + run.py)
+├── tools/             External tool wrappers (nmap, binwalk, steghide, …)
+├── agents/            Ollama-backed reasoning agents (Analyzer, Planner, Executor, Reporter)
+├── context/           Knowledge base parser + system prompts
+├── configs/           Model and skill configuration (YAML)
+└── tests/             Test suite (66 tests)
+```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a detailed system design
 including component descriptions, the solving workflow diagram, and the full

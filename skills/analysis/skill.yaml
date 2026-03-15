@@ -1,0 +1,7 @@
+name: analysis
+description: Inspect challenge artifacts – detect file types, encodings, and hex headers
+inputs:
+  - path
+  - data
+tools: []
+category: analysis

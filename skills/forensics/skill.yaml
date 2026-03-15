@@ -1,0 +1,11 @@
+name: forensics
+description: File carving, magic-byte analysis, PDF/PNG inspection
+inputs:
+  - path
+  - action
+tools:
+  - foremost
+  - pngcheck
+  - pdftotext
+  - file
+category: forensics

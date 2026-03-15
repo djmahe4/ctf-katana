@@ -1,0 +1,10 @@
+name: reverse_engineering
+description: Disassembly, symbol listing, and ELF header analysis
+inputs:
+  - path
+  - action
+tools:
+  - objdump
+  - nm
+  - readelf
+category: reversing

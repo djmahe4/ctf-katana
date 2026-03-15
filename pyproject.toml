@@ -12,6 +12,7 @@ license = {text = "MIT"}
 dependencies = [
     "mcp>=1.0.0",
     "ollama>=0.4.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -21,11 +22,12 @@ dev = [
 ]
 
 [project.scripts]
-katana-server = "katana.server:main"
+katana-server = "server.mcp_server:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["server*", "agents*", "tools*", "context*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
