@@ -9,7 +9,7 @@ from tools import detect_file_type, hex_dump, read_text_safe
 
 
 def analyze_file(path: str) -> dict:
-    """Analyse a file and return a structured summary."""
+    """Analyze a file and return a structured summary."""
     p = Path(path)
     if not p.exists():
         return {"error": f"File not found: {path}"}

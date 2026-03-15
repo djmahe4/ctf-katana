@@ -48,8 +48,10 @@ def _load_yaml(path: Path) -> dict:
 
 def _load_module(path: Path, module_name: str) -> types.ModuleType:
     spec = importlib.util.spec_from_file_location(module_name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load {path}")
+    if spec is None:
+        raise ImportError(f"Cannot create module spec for {path}")
+    if spec.loader is None:
+        raise ImportError(f"Module spec for {path} has no loader")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

@@ -71,7 +71,10 @@ _CATEGORY_MAP: dict[str, str] = {
 
 
 def category_for(title: str) -> str:
-    """Return the canonical category for a section *title*."""
+    """Return the canonical category for a section *title*.
+
+    Returns ``'misc'`` for titles not in the known mapping.
+    """
     return _CATEGORY_MAP.get(title.strip().lower(), "misc")
 
 
