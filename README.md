@@ -5,6 +5,172 @@ CTF-Katana
 
 --------------------------
 
+This repository reimagines [John Hammond's CTF-Katana](https://github.com/JohnHammond/katana)
+as an **agentic AI system**.  A locally deployed
+[MCP](https://modelcontextprotocol.io/) server orchestrates autonomous agents
+backed by [Ollama](https://ollama.com/) to analyse challenge artifacts, plan
+solving strategies, execute tools, generate exploits/PoCs, and produce
+write-ups — using the knowledge base below as its reference.
+
+## Quick Start
+
+### Prerequisites
+
+| Requirement | Version |
+|-------------|---------|
+| Python | ≥ 3.10 |
+| [Ollama](https://ollama.com/) | any recent release |
+
+Pull an Ollama model before first use (the default is **mistral**):
+
+```bash
+ollama pull mistral
+```
+
+### Installation
+
+```bash
+# Clone the repo
+git clone https://github.com/djmahe4/ctf-katana.git
+cd ctf-katana
+
+# Install the package (editable mode for development)
+pip install -e ".[dev]"
+```
+
+### Running the MCP Server
+
+```bash
+# Via the installed entry-point
+katana-server
+
+# Or via the Python module
+python -m katana
+```
+
+The server communicates over **stdio**, which is the standard MCP transport.
+Point any MCP-compatible client at it (Claude Desktop, VS Code with Copilot,
+or a custom client).
+
+#### Claude Desktop example
+
+Add this to your Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "katana": {
+      "command": "katana-server"
+    }
+  }
+}
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KATANA_OLLAMA_MODEL` | `mistral` | Ollama model name used by agents |
+| `KATANA_OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+
+## Usage
+
+### End-to-End Solving Workflow
+
+The system follows a six-step loop to solve a challenge:
+
+```
+  Analyze ──▶ Search KB ──▶ Plan ──▶ Execute ──▶ Interpret ──▶ Report
+                                        ▲            │
+                                        └── retry ───┘
+```
+
+1. **Analyze** – `agent_analyze` inspects the challenge file (type, encoding,
+   hex header) and asks Ollama to classify it.
+2. **Search** – `search_knowledge` queries the knowledge base for relevant
+   tools and techniques.
+3. **Plan** – `agent_plan` generates a numbered step-by-step strategy.
+4. **Execute** – Skill tools (`crypto_*`, `stego_*`, `forensics_*`, …) carry
+   out each plan step.
+5. **Interpret** – `agent_interpret` reviews the tool output and decides to
+   continue, retry, or finish.
+6. **Report** – `agent_report` compiles the session into a Markdown write-up
+   and optional exploit PoC.
+
+### Skill Tools (35)
+
+The MCP server exposes the following skill tools that can be called directly:
+
+| Category | Tools |
+|----------|-------|
+| **Knowledge** | `search_knowledge`, `get_knowledge_section`, `list_knowledge_categories` |
+| **Analysis** | `analyze_artifact`, `identify_encoding` |
+| **Crypto** | `crypto_rot13`, `crypto_caesar`, `crypto_caesar_bruteforce`, `crypto_xor_bruteforce`, `crypto_base64_decode`, `crypto_base64_encode`, `crypto_vigenere_decrypt`, `crypto_hex_decode` |
+| **Stego** | `stego_strings`, `stego_exiftool`, `stego_binwalk`, `stego_steghide`, `stego_zsteg` |
+| **Forensics** | `forensics_file_magic`, `forensics_foremost`, `forensics_pngcheck`, `forensics_pdf_text` |
+| **Web** | `web_check_headers`, `web_robots_txt`, `web_decode_jwt` |
+| **Reversing** | `reversing_disassemble`, `reversing_symbols`, `reversing_elf_info` |
+| **Pwn** | `pwn_checksec`, `pwn_rop_gadgets`, `pwn_pattern_create`, `pwn_got` |
+| **Recon** | `recon_nmap`, `recon_whois`, `recon_dig` |
+
+### Agent Tools (4, Ollama-backed)
+
+These tools invoke the Ollama LLM for higher-level reasoning:
+
+| Tool | Description |
+|------|-------------|
+| `agent_analyze` | Classify an artifact and suggest tools |
+| `agent_plan` | Build a step-by-step solving strategy |
+| `agent_interpret` | Interpret tool output, detect flags |
+| `agent_report` | Generate a write-up and exploit PoC |
+
+### Example Session
+
+Using any MCP client, a typical conversation looks like this:
+
+> **User:** Solve the challenge in `/tmp/challenge.png`
+>
+> **Agent** calls `agent_analyze("/tmp/challenge.png")`
+> → *"PNG image, likely steganography. Suggested tools: steghide, zsteg, exiftool."*
+>
+> **Agent** calls `search_knowledge("steganography")`
+> → *Returns relevant entries from the knowledge base.*
+>
+> **Agent** calls `agent_plan(analysis_json)`
+> → *Step 1: Run exiftool. Step 2: Try steghide with empty password. Step 3: Run zsteg. …*
+>
+> **Agent** calls `stego_exiftool("/tmp/challenge.png")`
+> → *Metadata output*
+>
+> **Agent** calls `stego_steghide("/tmp/challenge.png", "")`
+> → *"wrote extracted data to challenge.png.out"*
+>
+> **Agent** calls `agent_interpret("steghide extract", output)`
+> → *{"result": "Hidden data extracted", "next_action": "done", "flag": "FLAG{h1dd3n_d4ta}"}*
+>
+> **Agent** calls `agent_report(execution_log, "Stego Challenge")`
+> → *Markdown write-up + exploit script*
+
+### Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+### Project Layout
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a detailed system design
+including component descriptions, the solving workflow diagram, and the full
+directory layout.
+
+--------------------------
+
+> **Everything below is the original CTF-Katana knowledge base by John Hammond.**
+> It serves as the living reference that the agentic system searches and draws
+> from when solving challenges.
+
+--------------------------
+
 
 This repository, at the time of writing, will just host a listing of tools and commands that may help with CTF challenges. I hope to keep it as a "live document," and ideally it will not die out like the old "tools" page I had made ([https://github.com/USCGA/tools](https://github.com/USCGA/tools)).
 
