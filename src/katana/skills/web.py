@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 import urllib.parse
 
@@ -42,9 +44,6 @@ def sql_injection_test(url: str) -> str:
 
 def decode_jwt(token: str) -> dict:
     """Decode a JWT without verification (for inspection)."""
-    import base64
-    import json
-
     parts = token.split(".")
     if len(parts) < 2:
         return {"error": "Not a valid JWT"}

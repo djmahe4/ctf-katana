@@ -43,7 +43,8 @@ class AnalyzerAgent(BaseAgent):
                 f"\n\nRelevant knowledge-base entries:\n{knowledge_context}"
             )
         raw = await self.achat(prompt)
-        import json, re
+        import json
+        import re
         try:
             return json.loads(raw)
         except json.JSONDecodeError:

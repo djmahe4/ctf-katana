@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Optional
 
 import ollama
@@ -84,7 +85,6 @@ class BaseAgent:
             return json.loads(raw)
         except json.JSONDecodeError:
             # Try to extract JSON from markdown code block
-            import re
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             if m:
                 try:

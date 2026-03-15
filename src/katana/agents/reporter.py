@@ -41,7 +41,8 @@ class ReporterAgent(BaseAgent):
             "Generate a write-up and, if applicable, a proof-of-concept exploit script."
         )
         raw = await self.achat(prompt)
-        import json, re
+        import json
+        import re
         try:
             return json.loads(raw)
         except json.JSONDecodeError:

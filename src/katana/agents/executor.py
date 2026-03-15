@@ -36,7 +36,8 @@ class ExecutorAgent(BaseAgent):
             "Interpret this output. Did we make progress? Is there a flag?"
         )
         raw = await self.achat(prompt)
-        import json, re
+        import json
+        import re
         try:
             return json.loads(raw)
         except json.JSONDecodeError:

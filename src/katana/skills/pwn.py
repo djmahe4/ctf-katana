@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from string import ascii_lowercase, ascii_uppercase, digits
+
 from katana.utils import safe_run
 
 
@@ -20,11 +22,6 @@ def find_rop_gadgets(path: str) -> str:
 
 def pattern_create(length: int) -> str:
     """Generate a cyclic pattern for buffer-overflow offset detection."""
-    try:
-        from string import ascii_uppercase, ascii_lowercase, digits
-    except ImportError:
-        pass
-
     # Simple De Bruijn-like cyclic pattern
     pattern: list[str] = []
     for a in ascii_uppercase:
