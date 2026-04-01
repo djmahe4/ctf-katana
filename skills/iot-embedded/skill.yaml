@@ -1,0 +1,51 @@
+name: iot-analyzer
+version: "1.0.0"
+description: |
+  IoT/Embedded Systems Security Analyzer
+  
+  Security analysis for embedded systems and IoT devices:
+  - Firmware extraction and analysis
+  - Binary reverse engineering
+  - Protocol analysis
+  - Hardware security assessment
+
+author: Purple Engine Team
+license: MIT
+
+category: iot-embedded
+tags:
+  - iot
+  - embedded
+  - firmware
+  - hardware
+  - security
+
+inputs:
+  target:
+    type: string
+    required: true
+    description: Firmware file, binary, or device info
+  
+  mode:
+    type: string
+    required: false
+    default: full
+    enum: [firmware, binary, protocol, hardware, full]
+  
+  arch:
+    type: string
+    required: false
+    default: auto
+    enum: [auto, arm, mips, x86, x86_64, riscv]
+
+outputs:
+  status:
+    type: string
+  findings:
+    type: array
+  extracted_files:
+    type: array
+  report:
+    type: string
+
+kavach_policy: strict

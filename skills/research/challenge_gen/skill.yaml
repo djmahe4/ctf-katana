@@ -1,0 +1,55 @@
+name: challenge-gen
+version: "1.0.0"
+description: |
+  CTF Challenge Generator
+  
+  Automatically generates CTF challenges from vulnerability findings,
+  with AI-hardening to prevent trivial automated solving.
+
+author: Purple Engine Team
+license: MIT
+
+category: research
+tags:
+  - ctf
+  - challenge
+  - generation
+  - hardening
+
+inputs:
+  finding:
+    type: object
+    required: false
+    description: Vulnerability finding to convert to challenge
+  
+  vuln_type:
+    type: string
+    required: false
+    description: Vulnerability type for new challenge
+  
+  difficulty:
+    type: string
+    required: false
+    default: medium
+    enum: [easy, medium, hard, insane]
+  
+  category:
+    type: string
+    required: false
+    enum: [web, pwn, crypto, forensics, reverse, misc, web3, mobile]
+  
+  ai_hardening:
+    type: string
+    required: false
+    default: standard
+    enum: [none, standard, aggressive]
+
+outputs:
+  status:
+    type: string
+  challenge:
+    type: object
+  files:
+    type: array
+
+kavach_policy: standard

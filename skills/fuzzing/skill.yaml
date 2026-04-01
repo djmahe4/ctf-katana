@@ -1,0 +1,53 @@
+name: web-fuzzer
+version: "1.0.0"
+description: |
+  Intelligent Web Fuzzing Engine
+  
+  AI-powered web application fuzzing:
+  - Smart payload generation
+  - Context-aware fuzzing
+  - Wordlist management
+  - ffuf-style targeting
+
+author: Purple Engine Team
+license: MIT
+
+category: fuzzing
+tags:
+  - fuzzing
+  - web
+  - payloads
+  - security
+
+inputs:
+  target:
+    type: string
+    required: true
+    description: Target URL with FUZZ placeholder
+  
+  mode:
+    type: string
+    required: false
+    default: directory
+    enum: [directory, parameter, header, vhost, subdomain]
+  
+  wordlist:
+    type: string
+    required: false
+    description: Wordlist to use
+  
+  payload_type:
+    type: string
+    required: false
+    default: generic
+    enum: [generic, sqli, xss, lfi, rce, ssti]
+
+outputs:
+  status:
+    type: string
+  results:
+    type: array
+  statistics:
+    type: object
+
+kavach_policy: standard

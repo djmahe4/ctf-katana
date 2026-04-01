@@ -13,6 +13,9 @@ dependencies = [
     "mcp>=1.0.0",
     "ollama>=0.4.0",
     "pyyaml>=6.0",
+    # Purple Engine - Phase 1: CTFd Integration
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
 ]
 
 [project.optional-dependencies]
@@ -21,8 +24,32 @@ dev = [
     "pytest-asyncio>=0.21",
 ]
 
+# Purple Engine - Future phase dependencies
+phase2 = [
+    # Kavach AI Firewall (Phase 2)
+]
+
+phase3 = [
+    # Research & RAG (Phase 3)
+    # "chromadb>=0.4.0",
+    # "lancedb>=0.5.0",
+    # "yt-dlp>=2023.0.0",
+]
+
+phase4 = [
+    # Multi-domain support (Phase 4)
+    # "web3>=6.0.0",
+    # "pwntools>=4.11.0",
+    # "frida>=16.0.0",
+]
+
+all = [
+    "ctf-katana[dev,phase2,phase3,phase4]",
+]
+
 [project.scripts]
 katana-server = "server.mcp_server:main"
+purple-engine = "cli.main:main"
 
 [tool.setuptools.packages.find]
 include = ["server*", "agents*", "tools*", "context*"]

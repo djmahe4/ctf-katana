@@ -1,0 +1,52 @@
+name: web3-analyzer
+version: "1.0.0"
+description: |
+  Web3 Smart Contract Vulnerability Analyzer
+  
+  Comprehensive analysis of Solidity/EVM smart contracts for:
+  - Reentrancy vulnerabilities
+  - Flash loan attack vectors
+  - Integer overflow/underflow
+  - Access control issues
+  - Logic bugs and accounting errors
+
+author: Purple Engine Team
+license: MIT
+
+category: web3
+tags:
+  - smart-contracts
+  - solidity
+  - defi
+  - blockchain
+  - security
+
+inputs:
+  target:
+    type: string
+    required: true
+    description: Contract address, source file, or GitHub repo
+  
+  mode:
+    type: string
+    required: false
+    default: full
+    enum: [reentrancy, flash_loan, accounting, access_control, full]
+  
+  network:
+    type: string
+    required: false
+    default: mainnet
+    enum: [mainnet, goerli, sepolia, polygon, arbitrum, optimism, bsc]
+
+outputs:
+  status:
+    type: string
+  vulnerabilities:
+    type: array
+  risk_score:
+    type: number
+  report:
+    type: string
+
+kavach_policy: standard
