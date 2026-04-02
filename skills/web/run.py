@@ -14,12 +14,13 @@ from web.handlers.auth_handler import AuthHandler
 from web.handlers.xss_handler import XSSHandler
 from web.handlers.access_handler import AccessHandler
 from web.engines.web_designer import WebDesigner
+from web.engines.synthesis_engine import WebSynthesisEngine
 
 def main():
     parser = argparse.ArgumentParser(description="Advanced Web Security & Exploit Orchestrator")
     parser.add_argument("target", nargs="?", help="Target URL or local codebase path.")
-    parser.add_argument("--mode", "-m", choices=["auto", "discovery", "injection", "auth", "xss", "access"], default="auto")
-    parser.add_argument("--action", "-a", choices=["fuzz", "analyze", "exploit", "think", "mutate"], default="analyze")
+    parser.add_argument("--mode", "-m", choices=["auto", "discovery", "injection", "auth", "xss", "access", "synthesis"], default="auto")
+    parser.add_argument("--action", "-a", choices=["fuzz", "analyze", "exploit", "think", "mutate", "synthesize"], default="analyze")
     
     # Generic flags
     parser.add_argument("--token", help="JWT or session token for auth analysis.")
@@ -28,7 +29,10 @@ def main():
     
     # Designer flags
     parser.add_argument("--prompt", help="Designer prompt for brainstorming a new web attack chain.")
-    parser.add_argument("--model", default="groq/llama-3.3-70b-versatile", help="LLM model for the designer.")
+    # Synthesis flags
+    parser.add_argument("--server-type", choices=["uvicorn_fastapi", "tomcat_java", "nginx"], help="Server type for synthesis.")
+    parser.add_argument("--vuln-type", help="Vulnerability profile for synthesis.")
+    parser.add_argument("--output", "-o", default="output/synthesis", help="Output directory for generated challenges.")
 
     args = parser.parse_args()
 
@@ -39,6 +43,32 @@ def main():
         designer = WebDesigner(model=args.model)
         print(f"[*] Triggering Llama-based brainstorming for: '{args.prompt}'")
         # Agent uses free-llm-apis MCP via its own reasoning loop
+        sys.exit(0)
+
+    if args.mode == "synthesis" or args.action == "synthesize":
+        if not args.server_type or not args.vuln_type:
+            print("Error: --server-type and --vuln-type are required for synthesis.")
+            sys.exit(1)
+            
+        print(f"[*] Synthesizing {args.server_type} challenge with {args.vuln_type} vulnerability...")
+        engine = WebSynthesisEngine(workspace_root=str(Path(__file__).resolve().parent))
+        artifacts = engine.generate_challenge(args.server_type, args.vuln_type, args.output)
+        
+        print(f"[*] Synthesis complete! Artifacts generated in {args.output}:")
+        for name, path in artifacts.items():
+            print(f"    - {name}: {path}")
+            
+        # HITL (Human-In-The-Loop) approach for exploit generation
+        print("\n" + "="*40)
+        print("[HITL] Solvability Verification")
+        print("="*40)
+        choice = input("[?] Should I generate an exploit script (using web_exploit skill) to verify? [y/N]: ").strip().lower()
+        if choice == 'y':
+            print("[*] Handing off to web_exploit skill for verification...")
+            # Hand-off logic would go here
+            #TODO: implement handoff
+        else:
+            print("[*] Skipping exploit generation.")
         sys.exit(0)
 
     if not args.target:

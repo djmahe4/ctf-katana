@@ -192,12 +192,18 @@ class TripwireMonitor:
         "credentials.txt": "username: admin\npassword: Admin123!",
     }
     
-    def __init__(self, workspace: Path, custom_tripwires: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        workspace: Path,
+        custom_tripwires: Optional[Dict[str, str]] = None,
+        level: str = "enforcement"
+    ):
         self.workspace = Path(workspace)
         self.tripwires = {**self.DEFAULT_TRIPWIRES}
         if custom_tripwires:
             self.tripwires.update(custom_tripwires)
         
+        self.level = level
         # Track deployed tripwires and their access logs
         self.deployed_paths: Set[Path] = set()
         self.access_log: List[Dict] = []
@@ -238,10 +244,16 @@ class TripwireMonitor:
                 "tripwire_path": str(file_path),
                 "timestamp": datetime.utcnow().isoformat(),
                 "triggered": True,
+                "level": self.level,
             }
             self.access_log.append(access_event)
             
-            logger.critical(f"🚨 TRIPWIRE TRIGGERED: {file_path}")
+            log_msg = f"🚨 TRIPWIRE TRIGGERED [{self.level.upper()}]: {file_path}"
+            if self.level == "enforcement":
+                logger.critical(log_msg)
+            else:
+                logger.warning(log_msg)
+                
             return True
         
         return False

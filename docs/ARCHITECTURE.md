@@ -1,95 +1,104 @@
 # Purple Engine: System Architecture
 
-This document describes the internal design of the **Purple Engine** (a modernized CTF-Katana) – an agentic AI ecosystem that orchestrates Red Team offensive research, Blue Team defensive hardening, and Human-in-the-Loop (HITL) learning.
+This document describes the internal design of the **Purple Engine** – an autonomous agentic AI ecosystem that orchestrates Red Team offensive research, Blue Team defensive hardening, and environment synthesis.
 
 ## System Overview
 
-The Purple Engine operates as a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, exposing security-domain-specific tools and reasoning agents to any MCP-compatible client.
+The Purple Engine operates as a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, providing a **Synthesis-to-Shield** pipeline for secure, end-to-end CTF challenge management.
 
 ```mermaid
 graph TD
     subgraph "MCP Client Layer"
-        Client["Claude Desktop / VS Code / TUI (Planned)"]
+        Client["Claude Desktop / VS Code / Purple TUI"]
     end
 
-    subgraph "Purple Engine (MCP Server)"
+    subgraph "Purple Engine (The Conductor)"
         Server["Katana MCP Server (server/mcp_server.py)"]
-        Registry["Skill Registry (Dynamic Discovery)"]
+        Orchestrator["Purple Loop Orchestrator"]
         
         subgraph "Intelligence Layer"
-            Agents["Agent Orchestrator (Ollama)"]
-            Red["Red Team (Attack/Research)"]
-            Blue["Blue Team (Defense/Flagger)"]
+            Agents["Agentic Intelligence (Ollama)"]
+            Research["Research Agent (RAG/Swarm)"]
+            Synthesis["Web Synthesis Engine"]
+        end
+        
+        subgraph "Protection Layer (Kavach)"
+            Shield["Kavach Security Shield (PaC)"]
+            Audit["Audit Ledger (Persistence)"]
+            Enforcement["Auto-Enforcement (Process Isolation)"]
         end
         
         subgraph "Capability Layer"
-            Skills["22 Security Skills (skills/)"]
+            Skills["30 Domain Skills (skills/)"]
             KB["Knowledge Base (KNOWLEDGE_BASE.md)"]
         end
     end
 
-    subgraph "External Integration"
-        CLI["Security ToolWrappers (tools/)"]
-        Ollama["Ollama LLM (Mistral/Llama3/DeepSeek)"]
+    subgraph "Infrastructure"
+        Docker["Docker Compose / Kubernetes"]
+        CTFd["CTFd Instance (Autodeploy)"]
     end
 
     Client <-->|stdio| Server
-    Server <--> Registry
-    Server <--> Agents
-    Registry <--> Skills
-    Agents <--> Ollama
-    Skills <--> CLI
-    Agents <--> KB
+    Server <--> Orchestrator
+    Orchestrator <--> Agents
+    Agents <--> Research
+    Research <--> Synthesis
+    Synthesis <--> Shield
+    Shield <--> Docker
+    Docker <--> CTFd
+    Agents <--> Skills
+    Shield <--> Audit
 ```
 
 ## Core Components
 
-### 1. Unified MCP Server (`server/mcp_server.py`)
-The central entry point built with `FastMCP`. it exposes:
-- **Resources**: Structured views of the `KNOWLEDGE_BASE.md` (metadata, sections, categories).
-- **Tools**: 50+ callable functions, including 22 domain-specific skills and 4 reasoning agent endpoints.
-- **Prompts**: Standardized workflows for analysis and solving.
+### 1. Purple Loop Orchestrator (`skills/purple_loop_orchestrator/`)
+The "Conductor" of the entire pipeline. It manages the state machine for the 4-phase transformation:
+- **Research**: CVE/Technique analysis.
+- **Synthesize**: Environment & Exploit generation.
+- **Solve**: Agentic solving (Analyzer -> Planner -> Executor).
+- **Harden**: Applying Kavach PaC policies and Flagger obfuscation.
 
-### 2. Dynamic Skill Registry (`server/registry.py`)
-Decouples execution logic from the server. It automatically discovers and loads security skills by scanning the `skills/` directory. Each skill is a self-contained unit:
-- `skill.yaml`: Metadata, input schemas, and categorization.
-- `prompt.md`: Reasoning instructions for the agent when using this skill.
-- `run.py`: The deterministic execution logic (e.g., calling `nmap` or `binwalk`).
+### 2. Kavach Security Shield (`skills/firewall/`)
+Reimagined as a **Protection-as-Code (PaC)** orchestrator. Kavach provides:
+- **Environment Scaffolding**: Automated hardening of Docker/K8s manifests.
+- **Multi-Level Tripwires**: `AUDIT` (passive logging for challenges) vs `ENFORCEMENT` (active termination for agent isolation).
+- **Audit Ledger**: A centralized log of all security events across the pipeline.
 
-### 3. Agentic Intelligence (`agents/`)
-The "Brain" of the Purple Engine. Four specialized agents handle high-level reasoning:
-- **AnalyzerAgent**: Classifies artifacts and suggests techniques.
-- **PlannerAgent**: Builds the tactical "Red vs Blue" strategy.
-- **ExecutorAgent**: Interprets tool outputs and decides on retries or pivots.
-- **ReporterAgent**: Generates educational write-ups (HITL) and PoC exploits.
+### 3. Web Synthesis Engine (`skills/web/engines/`)
+Automates the generation of vulnerable, yet hardened, CTF environments. It supports standard stacks (Nginx, Tomcat, Uvicorn) and produces production-ready `docker-compose.yml` artifacts.
 
-### 4. Purple Team Specialization
-Distinct from generic security tools, the Purple Engine integrates specific offensive and defensive logic:
-- **Red Team (Offense)**: Leveraging `exploitation`, `fuzzing`, and `reversing` skills for autonomous solving.
-- **Blue Team (Defense)**: Utilizing the `flagger` and `firewall` skills for challenge hardening and anti-AI obfuscation.
+### 4. Dynamic Skill Registry
+Automatically discovers 30+ specialized security skills across 5 domains. Each skill provides reasoning prompts and execution logic.
 
-### 5. Knowledge Context (`context/`)
-- **`knowledge_base.py`**: A specialized parser for [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md). It transforms thousands of lines of legacy CTF research into a searchable RAG context for agents.
-- **`system_prompt.md`**: Defines the "Purple Engine" identity, enforcing the Red/Blue orchestration and educational focus.
+## Capability Matrix (30 Skills)
+
+| Domain | Skills |
+| :--- | :--- |
+| **Defense & Shielding** | `firewall` (Kavach), `flagger` |
+| **Intelligence & Research** | `research_agent`, `research_rag`, `research_swarm`, `research_vuln_discovery`, `research_challenge_gen`, `research_chrome_scraper` |
+| **Web & Exploit** | `web` (Synthesis), `web_exploit`, `exploitation`, `fuzzing`, `recon` |
+| **Binary & Mobile** | `binary_exploit`, `reverse`, `reverse_engineering`, `android`, `iot_embedded`, `arm_cortex` |
+| **Specialized Solvers** | `crypto_solver`, `stego_solver`, `forensics`, `web3`, `reentrancy`, `heap_exploit` |
+| **Orchestration** | `purple_loop_orchestrator`, `ctfd_setup`, `ctfd_solve`, `ctfd_manage`, `superpowers`, `writeup_generator` |
 
 ## Directory Layout
 
 ```text
 .
-├── KNOWLEDGE_BASE.md          # 1800+ lines of legacy CTF research (RAG source)
-├── README.md                  # Project landing page
 ├── server/                    # MCP server core & skill registry
-├── skills/                    # 22 self-contained security skills
-│   ├── flagger/               # Blue Team: Anti-AI flag hardening
-│   ├── exploitation/          # Red Team: Offensive research
+├── skills/                    # 30 self-contained security skills
+│   ├── firewall/              # Blue Team: Kavach Security Shield
+│   ├── web/                   # Red Team: Web Synthesis & Exploitation
+│   ├── purple_loop_orchestrator/ # The Conductor (Master Loop)
 │   └── ...
-├── tools/                     # Thin CLI wrappers for external binaries
 ├── agents/                    # Ollama-backed reasoning intelligence
-├── context/                   # Knowledge base parsers & system prompts
-└── configs/                   # Model and skill feature flags
+├── docs/                      # System documentation & progress logs
+└── configs/                   # Deployment and security policies
 ```
 
 ## Future Roadmap (Phase 5)
-1. **TUI/GUI Layer**: Interactive dashboard for the Purple Engine ecosystem.
-2. **Integration Testing**: End-to-end verification of the Red-Blue solving loop.
-3. **Automated Deployment**: One-click deployment via Ollama/Docker configurations.
+1. **Purple Dashboard**: Interactive TUI/GUI for monitoring the unified pipeline.
+2. **End-to-End Validation**: Automated Red-Blue loop verification suite.
+3. **Enterprise K8s Support**: Full Helm chart generation for large-scale CTF events.

@@ -1,0 +1,53 @@
+# K8s Deployment for Vulnerable Tomcat Challenge
+# Template for: {{ VULN_TYPE }}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ CHALLENGE_NAME }}-deployment
+  labels:
+    app: {{ CHALLENGE_NAME }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ CHALLENGE_NAME }}
+  template:
+    metadata:
+      labels:
+        app: {{ CHALLENGE_NAME }}
+    spec:
+      containers:
+      - name: {{ CHALLENGE_NAME }}
+        image: {{ CHALLENGE_NAME }}:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8009
+          name: ajp
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ CHALLENGE_NAME }}-service
+spec:
+  selector:
+    app: {{ CHALLENGE_NAME }}
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+    - name: ajp
+      protocol: TCP
+      port: 8009
+      targetPort: 8009
+  type: ClusterIP

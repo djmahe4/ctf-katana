@@ -15,8 +15,27 @@ class BinaryHandler:
             return self.show_symbols(path)
         elif action == "elf_info":
             return self.show_elf_info(path)
+        elif action == "ghidra_decompile":
+            return self.decompile_ghidra(path)
         else:
             return {"error": f"Unknown action: {action}"}
+
+    def decompile_ghidra(self, path: str) -> Dict[str, Any]:
+        """Wrapper for Ghidra headless decompiler."""
+        from reverse_engineering.engines.ghidra_engine import GhidraEngine
+        import asyncio
+        
+        engine = GhidraEngine()
+        # Note: Since the handler is currently synchronous, we run the async engine in a loop
+        # In a full-async refactor, this would be await engine.decompile(...)
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        result = loop.run_until_complete(engine.decompile(path, os.path.dirname(path)))
+        return result
 
     def disassemble(self, path: str) -> Dict[str, Any]:
         """Simple wrapper for objdump (simulated for current environment)."""

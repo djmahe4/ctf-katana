@@ -20,6 +20,15 @@ from typing import Dict, List, Any, Optional, Set
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
+import asyncio
+
+# Ensure project skills directory is in path for custom imports
+current_dir = Path(__file__).resolve().parent
+if str(current_dir.parent) not in sys.path:
+    sys.path.append(str(current_dir.parent))
+
+from android.apk_analysis.apk_compiler import APKCompiler
+from android.apk_analysis.vuln_hider import VulnerabilityHider
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +41,7 @@ class AnalysisMode(Enum):
     CRYPTO = "crypto"
     STORAGE = "storage"
     FULL = "full"
+    SYNTHESIS = "synthesis"
 
 
 class Severity(Enum):
@@ -450,6 +460,40 @@ class AndroidAnalyzer:
         
         return report
 
+    async def synthesize(self, target: str, output_apk: str, vuln_type: str = "hardcoded_secret") -> Dict[str, Any]:
+        """Unpack, Inject, and Repack an APK."""
+        logger.info(f"[*] Starting Android synthesis for {target}")
+        
+        compiler = APKCompiler()
+        hider = VulnerabilityHider()
+        
+        work_dir = Path(target).parent / "temp_unpack"
+        if work_dir.exists():
+            import shutil
+            shutil.rmtree(work_dir)
+            
+        # 1. Unpack
+        if not compiler.unpack(target, str(work_dir)):
+            return {"status": "error", "message": "Failed to unpack APK."}
+            
+        # 2. Inject
+        if not hider.hide_vulnerability(str(work_dir), vuln_type):
+            return {"status": "error", "message": "Failed to inject vulnerability."}
+            
+        # 3. Build
+        if not compiler.build(str(work_dir), output_apk):
+            return {"status": "error", "message": "Failed to rebuild APK."}
+            
+        # 4. Sign (Stub)
+        compiler.sign(output_apk)
+        
+        return {
+            "status": "success",
+            "mode": "synthesis",
+            "output_apk": output_apk,
+            "vulnerability_injected": vuln_type
+        }
+
 
 def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -468,6 +512,20 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         mode = AnalysisMode(mode_str)
     except ValueError:
         mode = AnalysisMode.FULL
+    
+    if mode == AnalysisMode.SYNTHESIS:
+        output = params.get('output', target.replace('.apk', '_vulnerable.apk'))
+        vuln = params.get('vulnerability', 'hardcoded_secret')
+        
+        analyzer = AndroidAnalyzer()
+        # run synthesis asynchronously
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        return loop.run_until_complete(analyzer.synthesize(target, output, vuln))
     
     try:
         analyzer = AndroidAnalyzer()
@@ -503,8 +561,10 @@ def main():
     parser = argparse.ArgumentParser(description='Android Security Analyzer')
     parser.add_argument('target', help='APK file path')
     parser.add_argument('--mode', '-m',
-                        choices=['static', 'manifest', 'permissions', 'components', 'crypto', 'storage', 'full'],
+                        choices=['static', 'manifest', 'permissions', 'components', 'crypto', 'storage', 'full', 'synthesis'],
                         default='full')
+    parser.add_argument('--output', '-o', help='Output APK path (for synthesis)')
+    parser.add_argument('--vulnerability', '-v', default='hardcoded_secret', help='Vulnerability type to inject')
     
     args = parser.parse_args()
     

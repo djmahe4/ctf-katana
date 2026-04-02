@@ -179,23 +179,40 @@ class PurpleEngineCLI:
             default='scan',
             help='Research mode'
         )
+        research_parser.add_argument(
+            'query',
+            nargs='?',
+            help='CVE, URL, or general query for the Knowledge Registry'
+        )
         
         # ==================== Challenge Generation (Phase 3) ====================
         
         generate_parser = subparsers.add_parser(
             'generate-challenge',
-            help='[Phase 3] Generate CTF challenge'
+            help='[Phase 3] Generate CTF challenge via Purple Loop'
         )
         generate_parser.add_argument(
-            '--category',
+            '--target',
             required=True,
-            help='Challenge category'
+            help='Research target (CVE or URL) to generate challenge from'
         )
         generate_parser.add_argument(
             '--difficulty',
             choices=['easy', 'medium', 'hard'],
             default='medium',
             help='Challenge difficulty'
+        )
+        generate_parser.add_argument(
+            '--hardening',
+            choices=['none', 'standard', 'aggressive'],
+            default='standard',
+            help='AI hardening level'
+        )
+        generate_parser.add_argument(
+            '--interactive',
+            '-i',
+            action='store_true',
+            help='Enable Human-In-The-Loop interactive mode'
         )
         
         # ==================== Write-up Generation ====================
@@ -225,6 +242,12 @@ class PurpleEngineCLI:
             required=True,
             help='Target system or challenge'
         )
+        purple_parser.add_argument(
+            '--interactive',
+            '-i',
+            action='store_true',
+            help='Enable Human-In-The-Loop interactive mode'
+        )
         
         return parser
     
@@ -232,7 +255,7 @@ class PurpleEngineCLI:
     
     def cmd_ctfd_setup(self, args) -> int:
         """Handle ctfd-setup command."""
-        from skills.ctfd.setup.run import run
+        from skills.ctfd_setup.run import run
         
         print("🚀 Purple Engine - CTFd Setup")
         print("=" * 50)
@@ -276,7 +299,7 @@ class PurpleEngineCLI:
     
     def cmd_ctfd_solve(self, args) -> int:
         """Handle ctfd-solve command."""
-        from skills.ctfd.solve.run import run
+        from skills.ctfd_solve.run import run
         
         print("🎯 Purple Engine - CTFd Challenge Solver")
         print("=" * 50)
@@ -340,7 +363,7 @@ class PurpleEngineCLI:
     
     def cmd_ctfd_manage(self, args) -> int:
         """Handle ctfd-manage command."""
-        from skills.ctfd.manage.run import run
+        from skills.ctfd_manage.run import run
         
         print(f"🛡️  Purple Engine - CTFd Manage: {args.action}")
         print("=" * 50)
@@ -371,6 +394,66 @@ class PurpleEngineCLI:
             print(f"\n✗ {result['message']}")
             return 1
     
+    async def cmd_research_agent(self, args) -> int:
+        """Handle research-agent command."""
+        from server.utils.knowledge_registry import KnowledgeRegistry
+        
+        print("🔍 Purple Engine - Knowledge Registry & Research Agent")
+        print("=" * 50)
+        
+        registry = KnowledgeRegistry(workspace_root=PROJECT_ROOT)
+        
+        print(f"\nPhase 2 intent discovery for mode: {args.mode}")
+        if args.query:
+            result = await registry.query(args.query)
+            print(f"\nResult [Intent: {result['intent']}]:")
+            print(f"  • Lite Results: {len(result['lite_results'])}")
+            print(f"  • Pro Results: {len(result['pro_results'])}")
+            
+            if result.get('purple_loop'):
+                pl = result['purple_loop']
+                print(f"\n💜 Purple Loop Status:")
+                print(f"  • Vulnerable Sink: {pl.get('vulnerability_sink')}")
+                print(f"  • Verified Fix Found: {pl.get('has_fix')}")
+                print(f"  • Exploit Path: {pl.get('exploit_primitive')}")
+            
+            return 0
+        else:
+            seeds = registry.bootstrap_seeds()
+            print(f"\n🌱 Bootstrapped {len(seeds)} research seeds from Knowledge Base.")
+            return 0
+
+    async def cmd_purple_team(self, args) -> int:
+        """Handle purple-team command using the Orchestrator skill."""
+        from skills.purple_loop_orchestrator.run import run as run_orchestrator
+        
+        print(f"\n💜 Purple Engine - Purple Team / Purple Loop Orchestration")
+        print(f"Target: {args.target}")
+        print("=" * 50)
+        
+        params = {
+            'target': args.target,
+            'difficulty': getattr(args, 'difficulty', 'medium'),
+            'ai_hardening': getattr(args, 'hardening', 'standard'),
+            'interactive': getattr(args, 'interactive', False)
+        }
+        
+        result = await run_orchestrator(params)
+        
+        if result['status'] == 'success':
+            print(f"\n✓ {result['message']}")
+            print("\nSteps Completed:")
+            for step in result.get('steps_completed', []):
+                print(f"  [x] {step}")
+            return 0
+        else:
+            print(f"\n✗ Orchestration Failed: {result.get('message', result.get('error'))}")
+            return 1
+
+    async def cmd_generate_challenge(self, args) -> int:
+        """Handle generate-challenge command (alias for purple-team orchestration)."""
+        return await self.cmd_purple_team(args)
+
     def cmd_not_implemented(self, args, phase: str) -> int:
         """Handle not-yet-implemented commands."""
         print(f"\n⚠️  This command is planned for {phase}")
@@ -398,16 +481,19 @@ class PurpleEngineCLI:
             return self.cmd_ctfd_manage(args)
         
         elif args.command == 'research-agent':
-            return self.cmd_not_implemented(args, "Phase 3: Research & RAG")
+            import asyncio
+            return asyncio.run(self.cmd_research_agent(args))
         
         elif args.command == 'generate-challenge':
-            return self.cmd_not_implemented(args, "Phase 3: Research & RAG")
+            import asyncio
+            return asyncio.run(self.cmd_generate_challenge(args))
         
         elif args.command == 'writeup':
             return self.cmd_not_implemented(args, "Phase 3: Research & RAG")
         
         elif args.command == 'purple-team':
-            return self.cmd_not_implemented(args, "Phase 5: Production")
+            import asyncio
+            return asyncio.run(self.cmd_purple_team(args))
         
         else:
             self.parser.print_help()

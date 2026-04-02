@@ -1,0 +1,19 @@
+# Dockerfile for Vulnerable Tomcat (Ghostcat) Challenge
+# Template for: {{ VULN_TYPE }}
+
+FROM tomcat:9.0.30-jdk11-openjdk-slim
+
+WORKDIR /usr/local/tomcat
+
+# Ghostcat (CVE-2020-1938) configuration - Ensured AJP is listening on all interfaces
+# Normal Tomcat installations (since CVE discovery) have AJP masked or listening only on loopback.
+# We reverse this security measure for the challenge.
+
+RUN sed -i 's/address="127.0.0.1"/address="0.0.0.0"/g' conf/server.xml
+
+# Sample vulnerable app setup (if any additional WAR is needed)
+COPY vulnerable.war webapps/
+
+EXPOSE 8080 8009
+
+CMD ["catalina.sh", "run"]

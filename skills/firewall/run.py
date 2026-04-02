@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from firewall.kavach import KavachWrapper, SecurityPolicy, PIISanitizer, PhantomWorkspace
+from firewall.kavach.scaffolder import DefenseScaffolder
 
 def run_containment(skill_name, profile_name="standard"):
     """
@@ -30,17 +31,17 @@ def run_containment(skill_name, profile_name="standard"):
     else:
         policy = SecurityPolicy.default_standard()
         
-    wrapper = KavachWrapper(policy=policy, workspace=Path.cwd())
-    
-    # This would wrap the actual skill function call
-    # For now, we simulate a 'Safe Execution Init'
-    audit_log = {
-        "skill": skill_name,
-        "phantom_status": "Enabled",
-        "pii_sanitization": "Active",
-        "tripwire_count": len(wrapper.tripwire.tripwires)
-    }
-    return audit_log
+    # Use KavachWrapper as a context manager for more reliable shielding
+    with KavachWrapper(policy=policy, workspace=Path.cwd()) as shield:
+        shield.skill_name = skill_name
+        # Simulated execution
+        audit_log = {
+            "skill": skill_name,
+            "status": "Shielded",
+            "pii_sanitization": "Active",
+            "tripwire_count": len(shield.tripwire.tripwires) if shield.tripwire else 0
+        }
+        return audit_log
 
 def run_network_audit(config_path=None):
     """
@@ -70,19 +71,45 @@ def run_bypass_test(target_ip):
     }
     return results
 
+def run_scaffold(server_type, output_dir, challenge_name="challenge"):
+    """
+    Generates infrastructure defense layers (PaC).
+    """
+    print(f"[*] Starting Security Scaffolding for {server_type}...")
+    scaffolder = DefenseScaffolder(workspace_root=str(Path(__file__).resolve().parent))
+    
+    artifacts = []
+    # 1. Server Shielding
+    artifacts += scaffolder.shield_web_server(server_type, output_dir)
+    
+    # 2. Network Policy
+    artifacts.append(scaffolder.generate_k8s_policy(challenge_name, ["10.0.0.0/8"], output_dir))
+    
+    # 3. Docker Hardening
+    artifacts.append(scaffolder.generate_docker_hardening(challenge_name, output_dir))
+    
+    # 4. Audit-Only Tripwires (ensure no accidental shutdowns)
+    artifacts += scaffolder.generate_audit_tripwires(output_dir)
+    
+    return artifacts
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", default="audit", choices=["audit", "containment", "bypass_test"])
+    parser.add_argument("--mode", default="audit", choices=["audit", "containment", "bypass_test", "scaffold", "shield"])
     parser.add_argument("--profile", default="standard")
     parser.add_argument("--target", help="IP or config file path")
     parser.add_argument("--skill_name", default="generic_task")
+    parser.add_argument("--server-type", choices=["nginx", "tomcat", "uvicorn"], default="nginx")
+    parser.add_argument("--output", "-o", default="output/shielding")
     args = parser.parse_args()
     
-    if args.mode == "containment":
+    if args.mode == "containment" or args.mode == "shield":
         result = run_containment(args.skill_name, args.profile)
     elif args.mode == "audit":
         result = run_network_audit(args.target)
     elif args.mode == "bypass_test":
         result = run_bypass_test(args.target)
+    elif args.mode == "scaffold":
+        result = run_scaffold(args.server_type, args.output)
         
     print(json.dumps(result, indent=2))

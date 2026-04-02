@@ -1,5 +1,5 @@
 name: "web"
-description: "Advanced Web Security & Exploit Orchestrator. Supports 20+ vulnerability categories including Injection, Auth, XSS, and Access Control."
+description: "Advanced Web Security & Synthesis Engine. Supports 20+ vulnerability categories and automated Dockerized environment synthesis (Nginx, Tomcat, Uvicorn)."
 version: "2.0.0"
 author: "Antigravity-C13"
 
@@ -26,6 +26,8 @@ engines:
   - name: "WebDesigner"
     path: "engines/web_designer.py"
     model: "groq/llama-3.3-70b-versatile"
+  - name: "WebSynthesisEngine"
+    path: "engines/synthesis_engine.py"
 
 # Actions Supported
 actions:
@@ -34,6 +36,7 @@ actions:
   - "exploit"
   - "think"
   - "mutate"
+  - "synthesize"
 
 # Requirements
 dependencies:

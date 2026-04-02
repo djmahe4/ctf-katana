@@ -1,0 +1,18 @@
+# Dockerfile for Vulnerable Nginx Challenge
+# Template for: {{ VULN_TYPE }}
+
+FROM nginx:stable-alpine
+
+WORKDIR /etc/nginx
+
+COPY conf/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY html/ /usr/share/nginx/html/
+
+# Optional: Add secret flags to the container
+RUN echo "CTF{nginx_alias_traversal}" > /etc/flag.txt
+
+RUN chmod 644 /etc/flag.txt
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

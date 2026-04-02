@@ -44,14 +44,30 @@ Transforming 1800+ lines of legacy research into a high-fidelity intelligence re
 
 ---
 
-## Phase 4: Multi-Domain Challenge Support
+## Phase 4: Multi-Domain Challenge Support & Synthesis
 **Status:** ✅ COMPLETE
 **Date:** April 2026
 
-Expanding the engine's reach across 22 specialized security skill domains.
+Expanding the engine's reach across 30+ specialized security skill domains and introducing automated environment synthesis.
 
 ### Key Milestones
-- **Binary & Web3 Implementation**: added specialized solvers for `reentrancy`, `heap_exploit`, and `arm_cortex`.
+- **Web Synthesis Engine**: Automated deployment of vulnerable Dockerized environments (Nginx, Tomcat, Uvicorn) via `WebSynthesisEngine`.
+- **Kavach Security Shield (v1.1)**: Reimagined the firewall as a **Protection-as-Code (PaC)** orchestrator with multi-level tripwires (Audit vs. Enforcement).
+- **Environment Hardening**: Integrated `DefenseScaffolder` for automated generation of hardened `docker-compose.yml` and Kubernetes `NetworkPolicy`.
+- **Binary & Web3 Implementation**: Added specialized solvers for `reentrancy`, `heap_exploit`, and `arm_cortex`.
 - **IoT & Android Support**: established capability folders for mobile and embedded analysis.
-- **Skill Registry Expansion**: 50+ tools mapped across 22 skill categories (binary/exploit/web/crypto/stego/etc.).
-- **Flagger (Blue Team)**: Integrated the `flagger` skill for anti-AI flag hardening.
+- **Skill Registry Expansion**: 50+ tools mapped across 30 skill categories (binary/exploit/web/crypto/stego/etc.).
+- **Flagger (Blue Team)**: Integrated the `flagger` skill for anti-AI flag hardening and poisoning.
+
+---
+
+## Phase 5: Interface & Orchestration Integration
+**Status:** 🏗️ IN PROGRESS
+**Date:** April 2026
+
+Unifying the Purple Engine components into a seamless, high-fidelity orchestration pipeline.
+
+### Target Goals
+- **Purple Dashboard**: Real-time TUI/GUI for monitoring agent telemetry and synthesis progress.
+- **Solve-Harden Loop**: Fully automated end-to-end pipeline (Research -> Synthesize -> Solve -> Harden).
+- **Integration Test Suite**: Comprehensive validation of the Red-Blue loop across all 30 domains.

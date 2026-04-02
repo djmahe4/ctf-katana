@@ -152,7 +152,7 @@ For each plugin in `install_plugins` list:
    ```bash
    docker exec purple_ctfd bash -c "
        cd /opt/CTFd/CTFd/plugins
-       git clone https://github.com/frankli0324/CTFd-Whale.git
+       git clone --depth 1 https://github.com/frankli0324/CTFd-Whale.git
        pip install -r CTFd-Whale/requirements.txt
    "
    
@@ -180,7 +180,7 @@ For each plugin in `install_plugins` list:
 # For custom themes:
 docker exec purple_ctfd bash -c "
     cd /opt/CTFd/CTFd/themes
-    git clone {theme_repo_url} {theme_name}
+    git clone --depth 1 {theme_repo_url} {theme_name}
 "
 
 # Set theme via API or config

@@ -1,0 +1,20 @@
+# Dockerfile for Vulnerable Uvicorn/FastAPI Challenge
+# Template for: {{ VULN_TYPE }}
+
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Standard dependencies
+RUN pip install fastapi uvicorn pydantic
+
+# Vulnerability-specific setup
+# Case: pydantic_bypass
+# Case: dependency_confusion
+# Case: open_redirect
+
+COPY app.py .
+COPY flag.txt /root/flag.txt
+
+# Run server with intentionally vulnerable flags
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]

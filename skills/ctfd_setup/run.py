@@ -17,11 +17,13 @@ from datetime import datetime
 import logging
 import re
 
-# Add parent directory for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root for imports
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# Import CTFd API client
-from api_client import CTFdAPIClient, CTFdChallenge
+# Import CTFd API client from server utils
+from server.utils.ctfd_client import CTFdAPIClient, CTFdChallenge
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +335,7 @@ class CTFdSetup:
         # Clone plugin into container
         cmd = f"""docker exec purple_ctfd bash -c '
             cd /opt/CTFd/CTFd/plugins && \
-            git clone {plugin_urls[plugin_name]} {plugin_name} && \
+            git clone --depth 1 {plugin_urls[plugin_name]} {plugin_name} && \
             if [ -f {plugin_name}/requirements.txt ]; then \
                 pip install -r {plugin_name}/requirements.txt; \
             fi

@@ -16,7 +16,8 @@ import shutil
 import hashlib
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Callable, Any
+from enum import Enum
+from typing import Dict, List, Optional, Any, Callable, Set, Union
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 from contextlib import contextmanager
@@ -30,6 +31,17 @@ from .exceptions import (
 from .monitor import TripwireMonitor, AutoEnforcer
 
 logger = logging.getLogger(__name__)
+
+
+class TripwireLevel(Enum):
+    """
+    Tripwire enforcement levels.
+    
+    ENFORCEMENT: Process is killed/interrupted upon tripwire trigger.
+    AUDIT: Event is logged to AuditLedger, but process continues.
+    """
+    ENFORCEMENT = "enforcement"
+    AUDIT = "audit"
 
 
 @dataclass
@@ -57,8 +69,10 @@ class SecurityPolicy:
     sanitize_pii: bool = True
     pii_patterns: Dict[str, str] = field(default_factory=dict)
     
-    # Tripwires
+    # Tripwire Monitoring
     enable_tripwires: bool = True
+    tripwire_level: TripwireLevel = TripwireLevel.ENFORCEMENT
+    custom_tripwires: Optional[Dict[str, str]] = None
     tripwire_files: Any = field(default_factory=lambda: ["system_auth_tokens.json"])
     
     # Phantom workspace
@@ -196,7 +210,20 @@ class PIISanitizer:
             for name, pattern in self.patterns.items()
         }
         
+        # Dynamic environment-based secrets
+        self.env_secrets: Dict[str, str] = self._load_env_secrets()
+        
         self.detections: List[Dict[str, Any]] = []
+
+    def _load_env_secrets(self) -> Dict[str, str]:
+        """Automatically identify and load secrets from common environment variables."""
+        secrets = {}
+        target_keys = ["API_KEY", "TOKEN", "PASSWORD", "SECRET", "CREDENTIAL"]
+        for key, value in os.environ.items():
+            if any(target in key.upper() for target in target_keys):
+                if len(value) > 8: # Only track substantial secrets
+                    secrets[key] = value
+        return secrets
     
     def calculate_entropy(self, string: str) -> float:
         """Calculate Shannon entropy of string (for detecting high-entropy secrets)."""
@@ -254,6 +281,32 @@ class PIISanitizer:
         """
         detections = self.scan_text(text)
         
+        # Also redact environment secrets
+        for env_key, secret_val in self.env_secrets.items():
+            if secret_val in text:
+                # Find all occurrences manually if not already caught by regex
+                start = 0
+                while True:
+                    start = text.find(secret_val, start)
+                    if start == -1: break
+                    end = start + len(secret_val)
+                    
+                    # check for overlaps with existing detections
+                    is_overlapping = any(
+                        not (end <= d["position"][0] or start >= d["position"][1])
+                        for d in detections
+                    )
+                    
+                    if not is_overlapping:
+                        detections.append({
+                            "type": f"env_{env_key.lower()}",
+                            "value": secret_val,
+                            "position": (start, end),
+                            "entropy": self.calculate_entropy(secret_val),
+                            "timestamp": datetime.utcnow().isoformat(),
+                        })
+                    start = end
+
         if not detections:
             return text, []
         
@@ -625,7 +678,10 @@ class KavachWrapper:
             self.phantom_workspace = None
 
         if self.policy.enable_tripwires:
-            self.tripwire = TripwireMonitor(workspace=self.workspace)
+            self.tripwire = TripwireMonitor(
+                workspace=self.workspace,
+                level=self.policy.tripwire_level.value
+            )
             self.tripwire.deploy()
         else:
             self.tripwire = None
@@ -638,6 +694,27 @@ class KavachWrapper:
 
         self.error_count = 0
         self.skill_name = "unknown"
+
+    def __enter__(self):
+        """Allows use of KavachWrapper as a context manager."""
+        self.audit_ledger.log_event(
+            event_type="shield_activated",
+            skill_name=self.skill_name,
+            severity="INFO",
+            details={"mode": "context_manager"}
+        )
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup on context exit."""
+        if exc_type:
+            self.audit_ledger.log_event(
+                event_type="shield_exception",
+                skill_name=self.skill_name,
+                severity="HIGH",
+                details={"error": str(exc_val)}
+            )
+        self.cleanup()
     
     def execute(
         self,

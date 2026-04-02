@@ -42,7 +42,7 @@ def run(inputs: dict) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CTF-Katana Binary Analyst (ReverseEngineering v2)")
     parser.add_argument("path", nargs="?", help="Path to binary file.")
-    parser.add_argument("--action", "-a", choices=["disassemble", "symbols", "elf_info", "think"], default="disassemble")
+    parser.add_argument("--action", "-a", choices=["disassemble", "symbols", "elf_info", "think", "ghidra_decompile"], default="disassemble")
     parser.add_argument("--prompt", help="Technical RE designer prompt.")
     parser.add_argument("--model", help="LLM model.")
 

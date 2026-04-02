@@ -1,6 +1,6 @@
-"""Knowledge-base built from the CTF-Katana README.
+"""Tier 1 (Lite) Knowledge Base built from the CTF-Katana KNOWLEDGE_BASE.md.
 
-Parses the repository's ``README.md`` into structured, searchable sections so
+Parses the repository's ``KNOWLEDGE_BASE.md`` into structured, searchable sections so
 that agents can look up tools, techniques and commands for any CTF category.
 """
 
@@ -18,7 +18,7 @@ from typing import List, Optional
 
 @dataclass
 class KnowledgeEntry:
-    """A single tool / technique bullet from the README."""
+    """A single tool / technique bullet from the knowledge base."""
     name: str
     description: str
     commands: List[str] = field(default_factory=list)
@@ -181,8 +181,8 @@ def _parse_entries(body: str) -> List[KnowledgeEntry]:
 # Public API
 # ---------------------------------------------------------------------------
 
-class KnowledgeBase:
-    """Searchable knowledge base built from the CTF-Katana README."""
+class LocalKnowledge:
+    """Tier 1 (Lite) Searchable knowledge base built from KNOWLEDGE_BASE.md."""
 
     def __init__(self, sections: Optional[List[KnowledgeSection]] = None):
         self.sections: List[KnowledgeSection] = sections or []
@@ -190,7 +190,7 @@ class KnowledgeBase:
     # -- construction -------------------------------------------------------
 
     @classmethod
-    def from_readme(cls, path: Optional[str | Path] = None) -> "KnowledgeBase":
+    def from_file(cls, path: Optional[str | Path] = None) -> "LocalKnowledge":
         """Parse the knowledge base at *path* (defaults to ``KNOWLEDGE_BASE.md`` in repo root)."""
         if path is None:
             path = Path(__file__).resolve().parent.parent / "KNOWLEDGE_BASE.md"
@@ -264,7 +264,7 @@ class KnowledgeBase:
 
     def summary(self) -> str:
         """Return a human-readable summary of the knowledge base."""
-        lines = [f"CTF-Katana Knowledge Base – {len(self.sections)} sections\n"]
+        lines = [f"Purple Engine Local Knowledge Base – {len(self.sections)} sections\n"]
         for section in self.sections:
             cat = category_for(section.title)
             lines.append(f"  [{cat}] {section.title} ({len(section.entries)} entries)")

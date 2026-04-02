@@ -1,5 +1,4 @@
-"""
-Purple Engine Knowledge Base
+"""Tier 2 (Pro) Semantic Research RAG system for Purple Engine.
 
 Production-grade RAG (Retrieval-Augmented Generation) system using:
 - ChromaDB for vector storage and semantic search
@@ -55,11 +54,11 @@ except ImportError:
 
 @dataclass
 class Document:
-    """Represents a document in the knowledge base."""
+    """Represents a document in the research RAG."""
     id: str
     content: str
     source: str
-    source_type: str  # 'github', 'youtube', 'paper', 'newsletter', 'cve', 'exploit', 'writeup', 'manual'
+    source_type: str  # 'github', 'youtube', 'paper', 'newsletter', 'cve', 'exploit', 'writeup', 'manual', 'seed'
     title: str = ""
     url: str = ""
     tags: List[str] = field(default_factory=list)
@@ -76,7 +75,7 @@ class Document:
 
 @dataclass
 class SearchResult:
-    """Represents a search result."""
+    """Represents a search result from the RAG."""
     document_id: str
     content: str
     source: str
@@ -221,12 +220,12 @@ class ChromaEmbeddingFunction:
 
 
 # =============================================================================
-# Knowledge Base
+# Research RAG
 # =============================================================================
 
-class KnowledgeBase:
+class ResearchRAG:
     """
-    Production-grade RAG Knowledge Base for Purple Engine.
+    Tier 2 (Pro) Semantic Research RAG system for Purple Engine.
     
     Uses ChromaDB for vector storage and semantic search.
     Supports multiple embedding providers (local or Ollama).
@@ -315,7 +314,7 @@ class KnowledgeBase:
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
     ):
-        self.persist_directory = persist_directory or Path.home() / ".purple-engine" / "knowledge_db"
+        self.persist_directory = Path(persist_directory) if persist_directory else Path.home() / ".purple-engine" / "knowledge_db"
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         
         self.collection_name = collection_name
@@ -347,7 +346,7 @@ class KnowledgeBase:
         self.repos_dir = self.persist_directory / "repos"
         self.repos_dir.mkdir(exist_ok=True)
         
-        logger.info(f"KnowledgeBase initialized: {self.persist_directory}")
+        logger.info(f"ResearchRAG initialized: {self.persist_directory}")
         logger.info(f"Collection: {collection_name}, Documents: {self._collection.count()}")
     
     def _chunk_text(self, text: str) -> List[str]:
@@ -395,7 +394,7 @@ class KnowledgeBase:
         metadata: Dict[str, Any] = None,
     ) -> str:
         """
-        Add a document to the knowledge base.
+        Add a document to the research RAG.
         
         Automatically chunks content and generates embeddings.
         Returns: document ID
@@ -454,7 +453,7 @@ class KnowledgeBase:
         min_relevance: float = 0.0,
     ) -> List[SearchResult]:
         """
-        Semantic search over knowledge base.
+        Semantic search over the research RAG.
         
         Returns: List of SearchResults sorted by relevance
         """
@@ -510,7 +509,7 @@ class KnowledgeBase:
         """
         Clone/pull a repository and index its contents.
         
-        This is cron-friendly - can be called periodically to keep KB updated.
+        This is cron-friendly - can be called periodically to keep RAG updated.
         """
         if not HAS_GIT:
             return {"status": "error", "message": "gitpython not installed"}
@@ -597,7 +596,7 @@ class KnowledgeBase:
         
         Designed for cron usage:
         ```
-        0 */6 * * * python -c "from skills.research.knowledge_base import KnowledgeBase; KnowledgeBase().sync_all_repos()"
+        python -c "from server.utils.research_rag import ResearchRAG; ResearchRAG().sync_all_repos()"
         ```
         """
         repos = repos or self.DEFAULT_REPOS
@@ -617,54 +616,38 @@ class KnowledgeBase:
         }
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get knowledge base statistics."""
+        """Get research RAG statistics (safe for large collections)."""
         count = self._collection.count()
-        
-        # Get source type breakdown
-        # Note: ChromaDB doesn't support GROUP BY, so we do this in Python
-        all_docs = self._collection.get(include=["metadatas"])
-        
-        by_source_type = {}
-        by_source = {}
-        
-        for meta in all_docs['metadatas']:
-            src_type = meta.get('source_type', 'unknown')
-            source = meta.get('source', 'unknown')
-            
-            by_source_type[src_type] = by_source_type.get(src_type, 0) + 1
-            by_source[source] = by_source.get(source, 0) + 1
         
         return {
             "total_chunks": count,
-            "by_source_type": by_source_type,
-            "by_source": by_source,
             "persist_directory": str(self.persist_directory),
-            "embedding_model": getattr(self._embedder, 'model_name', getattr(self._embedder, 'model', 'unknown')),
+            "embedding_model": getattr(self._embedder, 'model', 'all-MiniLM-L6-v2'),
         }
     
     def clear(self):
-        """Clear all documents from knowledge base."""
+        """Clear all documents from research RAG."""
         self._client.delete_collection(self.collection_name)
         self._collection = self._client.create_collection(
             name=self.collection_name,
             embedding_function=ChromaEmbeddingFunction(self._embedder),
             metadata={"hnsw:space": "cosine"}
         )
-        logger.info("Knowledge base cleared")
+        logger.info("Research RAG cleared")
 
 
 # =============================================================================
 # Convenience Functions
 # =============================================================================
 
-def search_knowledge(query: str, limit: int = 5, **kwargs) -> List[Dict[str, Any]]:
+def search_research(query: str, limit: int = 5, **kwargs) -> List[Dict[str, Any]]:
     """
-    Quick search function for use in agent prompts.
+    Quick search function for use in research agent prompts.
     
     Returns simplified results for LLM consumption.
     """
-    kb = KnowledgeBase()
-    results = kb.search(query, limit=limit, **kwargs)
+    rag = ResearchRAG()
+    results = rag.search(query, limit=limit, **kwargs)
     
     return [
         {
@@ -682,8 +665,8 @@ def search_knowledge(query: str, limit: int = 5, **kwargs) -> List[Dict[str, Any
 
 def sync_repos():
     """CLI-friendly function for cron jobs."""
-    kb = KnowledgeBase()
-    result = kb.sync_all_repos()
+    rag = ResearchRAG()
+    result = rag.sync_all_repos()
     print(json.dumps(result, indent=2))
     return result
 
@@ -697,20 +680,20 @@ if __name__ == "__main__":
         if cmd == "sync":
             sync_repos()
         elif cmd == "stats":
-            kb = KnowledgeBase()
-            print(json.dumps(kb.get_stats(), indent=2))
+            rag = ResearchRAG()
+            print(json.dumps(rag.get_stats(), indent=2))
         elif cmd == "search":
             query = " ".join(sys.argv[2:])
-            results = search_knowledge(query)
+            results = search_research(query)
             print(json.dumps(results, indent=2))
         elif cmd == "clear":
-            kb = KnowledgeBase()
-            kb.clear()
-            print("Knowledge base cleared")
+            rag = ResearchRAG()
+            rag.clear()
+            print("Research RAG cleared")
         else:
             print(f"Unknown command: {cmd}")
-            print("Usage: python knowledge_base.py [sync|stats|search <query>|clear]")
+            print("Usage: python research_rag.py [sync|stats|search <query>|clear]")
     else:
-        print("Purple Engine Knowledge Base")
-        print("Usage: python knowledge_base.py [sync|stats|search <query>|clear]")
+        print("Purple Engine Research RAG")
+        print("Usage: python research_rag.py [sync|stats|search <query>|clear]")
 

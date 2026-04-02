@@ -13,12 +13,13 @@ from fuzzing.handlers.binary_handler import BinaryHandler
 from fuzzing.handlers.protocol_handler import ProtocolHandler
 from fuzzing.handlers.cloud_handler import CloudHandler
 from fuzzing.engines.fuzz_designer import FuzzDesigner
+from fuzzing.ffufai.engine import FfufAIEngine
 
 def main():
     parser = argparse.ArgumentParser(description="Advanced Fuzzing & Target Designer Tool")
     parser.add_argument("target", nargs="?", help="Target URL, binary path, or protocol description.")
     parser.add_argument("--mode", "-m", choices=["web", "binary", "protocol", "cloud", "auto"], default="auto")
-    parser.add_argument("--action", "-a", choices=["fuzz", "analyze", "harness", "think", "mutate"], default="fuzz")
+    parser.add_argument("--action", "-a", choices=["fuzz", "analyze", "harness", "think", "mutate", "ffufai"], default="fuzz")
     
     # Web/General flags
     parser.add_argument("--payload-type", "-p", choices=["generic", "sqli", "xss", "lfi", "rce", "ssti"], default="generic")
@@ -56,6 +57,16 @@ def main():
         with open(output_path, "w") as f:
             f.write(script)
         print(f"[*] Mutator script saved to: {output_path}")
+        sys.exit(0)
+
+    if args.action == "ffufai":
+        if not args.target:
+            print("Error: Target URL required for 'ffufai' action.")
+            sys.exit(1)
+        engine = FfufAIEngine(workspace_root=str(Path(__file__).resolve().parent))
+        print(f"[*] Launching FfufAI Engine for: {args.target}")
+        result = engine.run_fuzz(args.target, **vars(args))
+        print(f"[*] Summary: {result.summary}")
         sys.exit(0)
 
     if not args.target:

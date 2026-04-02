@@ -23,6 +23,9 @@ engines:
   - name: "FuzzDesigner"
     path: "engines/fuzz_designer.py"
     model: "groq/llama-3.3-70b-versatile"
+  - name: "FfufAI"
+    path: "ffufai/engine.py"
+    model: "groq/llama-3.3-70b-versatile"
 
 # Actions Supported
 actions:

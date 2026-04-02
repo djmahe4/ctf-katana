@@ -12,6 +12,7 @@ This skill provides a unified, next-generation orchestration layer for modern we
 ## Core Capabilities
 
 - **Discovery (DiscoveryHandler)**: Initial surface mapping including header analysis, robots.txt, and security.txt.
+- **Synthesis (WebSynthesisEngine)**: Automated deployment of vulnerable Dockerized environments (Nginx, Tomcat, Uvicorn).
 - **Injection (InjectionHandler)**: Detection and exploitation of SQLi, NoSQLi, Command Injection, and SSTI.
 - **Authentication (AuthHandler)**: JWT tampering (`alg: none`, payload analysis) and session cookie audit.
 - **XSS (XSSHandler)**: Context-aware detection and exploitation of Stored, Reflected, and DOM XSS.
