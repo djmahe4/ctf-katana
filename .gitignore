@@ -24,3 +24,9 @@ output/
 *~
 .DS_Store
 data/
+
+# Rust
+target/
+**/*.rs.bk
+debug/
+release/

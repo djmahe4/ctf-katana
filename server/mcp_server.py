@@ -14,6 +14,8 @@ from mcp.server.fastmcp import FastMCP
 
 from context.knowledge_base import KnowledgeBase
 from server.registry import discover_skills
+from server.utils.metrics import get_telemetry
+from server.utils.explainer import get_explainer
 
 # ---------------------------------------------------------------------------
 # Initialise
@@ -142,21 +144,46 @@ def get_skill_prompt(skill_name: str) -> str:
 
 @mcp.tool()
 def run_skill(skill_name: str, inputs_json: str = "{}") -> str:
-    """Execute a skill by name with the given JSON inputs."""
+    """Execute a skill by name with the given JSON inputs (metrics enabled)."""
+    telemetry = get_telemetry()
+    m = telemetry.start_metric(skill_name, category="skill_execution")
+    
     skill = _skills.get(skill_name)
     if skill is None:
+        telemetry.finish_metric(m, status="error", metadata={"reason": "skill_not_found"})
         return json.dumps({"error": f"Skill '{skill_name}' not found."})
+    
     if skill.run is None:
+        telemetry.finish_metric(m, status="error", metadata={"reason": "no_run_function"})
         return json.dumps({"error": f"Skill '{skill_name}' has no run function."})
+    
     try:
         inputs = json.loads(inputs_json)
     except json.JSONDecodeError as exc:
+        telemetry.finish_metric(m, status="error", metadata={"reason": "invalid_json"})
         return json.dumps({"error": f"Invalid JSON inputs: {exc}"})
+    
     try:
         result = skill.run(inputs)
+        telemetry.finish_metric(m, status="success")
         return json.dumps(result, default=str)
     except Exception as exc:
+        telemetry.finish_metric(m, status="error", metadata={"reason": str(exc)})
         return json.dumps({"error": str(exc)})
+
+@mcp.tool()
+def generate_walkthrough(tool_name: str, tool_output: str, context: str = "") -> str:
+    """
+    Generate an educational walkthrough/explanation of a tool result via Ollama.
+    Part of the 'Educational Hacking' learning pipeline.
+    """
+    explainer = get_explainer()
+    try:
+        result_obj = json.loads(tool_output)
+    except:
+        result_obj = tool_output
+        
+    return explainer.generate_walkthrough(tool_name, result_obj, context)
 
 
 # ===================================================================

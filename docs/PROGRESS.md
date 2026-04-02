@@ -31,6 +31,9 @@ The primary focus is transforming the raw agentic backend into a production-read
 - [x] **Android/IoT Capability**: established base handlers for mobile/embedded.
 
 ---
+## Phase 4.5: Performance Benchmarking & Learning Pipeline
+
+Refer to [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization) for detailed information.
 
 ## Phase 5: Interface & Orchestration Unification
 **Status:** 🏗️ IN PROGRESS

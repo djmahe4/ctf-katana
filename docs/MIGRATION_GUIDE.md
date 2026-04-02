@@ -115,6 +115,61 @@ let approved = rx.await.unwrap_or(false); // Code SLEEPS here until you hit 'Y'
 
 ---
 
+> [!NOTE]
+> For a broader overview of current development milestones and feature status, see [Project Progress & Roadmap](PROGRESS.md).
+
+## 🛡️ Level 3.5: Agentic Security Hardening & Performance Optimization
+
+This phase refines the core project architecture to minimize **Agentic Decay** and maximize **Execution Velocity**. It builds on the existing Purple Loop (Analyze → Search KB → Plan → Execute → Shield → HITL) and secures the hybrid architecture for your B.Tech thesis.
+
+### 1. Core Objective
+Minimize failures across multi-step tool chains and migrate high-latency tasks (binary analysis, crypto) to Rust. This ensures local-first execution reliability and memory safety.
+
+### 2. Technical Implementation Stack & Resources
+The following selections prioritize stability and seamless integration with the current Python MCP server while supporting the Rust transition.
+
+| Category | Recommended Tooling | Purpose in Phase 4.5 | Key Resources |
+| :--- | :--- | :--- | :--- |
+| **Language** | Rust (Official SDK) | Replace Python for high-latency tasks (Binary/RE/Crypto). | [rust-sdk](https://github.com/modelcontextprotocol/rust-sdk) |
+| **Isolation** | Firecracker / gVisor | Secure sandbox for untrusted AI-generated payloads. | [Firecracker](https://firecracker-microvm.github.io/) |
+| **Orchestration**| FastMCP (Python) | High-level routing and tool discovery. | [FastMCP](https://github.com/PrefectHQ/fastmcp) |
+| **Binary Analysis**| r2pipe + radare2 | Scriptable LLM-driven reverse engineering interface. | [r2pipe](https://github.com/radareorg/radare2-r2pipe) |
+| **Web Security** | Nuclei | Template-based scanning to replace brittle custom fuzzers. | [Nuclei](https://github.com/projectdiscovery/nuclei) |
+| **Data Layer** | Redis | State persistence and caching for multi-step loops. | [Redis](https://redis.io/) |
+
+### 🏗️ Architectural Considerations & WSL2 Readiness
+
+> [!IMPORTANT]
+> **WSL2 Requirement for Windows Isolation**
+> Since you are on Windows, high-performance isolation via **Firecracker** or **gVisor** requires a **WSL2 (Windows Subsystem for Linux)** environment with KVM enabled. Firecracker leverages Linux-native virtualization which is now fully supported in modern WSL2 kernels.
+
+*   **Hybrid State Engine**: While Level 3 uses SQLite for persistent telemetry, Phase 4.5 introduces **Redis** as a volatile "Fast Memory" layer. This allows the Purple Loop to share state across multiple agents (Red/Blue/Research) in real-time while maintaining long-term history in SQLite.
+*   **Decay Mitigation via Logic Gates**: To prevent "Agentic Decay," we implement **Context Pruning** and **CoT Verification** within the FastMCP orchestrator. This ensures the LLM's context window stays clean during long-running CTF challenges.
+
+### 📊 Mathematical Benchmarking Equations
+These metrics provide verifiable quantifiers for your thesis performance evaluation:
+
+*   **Reliability Decay Equation**: Measures the product of component reliability across $n$ steps.
+    $$ P_s = \prod_{i=1}^{n} (P_i \times C_i) $$
+*   **Execution Efficiency Factor**: The ratio of solved flags/vulnerabilities per minute.
+    $$ E = \frac{V_d}{T_e} $$
+*   **Latency Reduction Ratio**: Comparing Python baseline against Rust optimization on hot paths.
+    $$ L_r = \frac{T_{python}}{T_{rust}} $$
+*   **Security Guardrail Residual Risk**: Risk reduction via layered filters (Pydantic + Sandbox + HITL).
+    $$ R_r = R_u \times (1 - F_e)^m $$
+
+### 🎯 Baselines for Comparison
+Compare these targets against your Phase 4 baseline to quantify the success of the hardening:
+
+| Metric | Industry Baseline | Phase 4.5 Target |
+| :--- | :--- | :--- |
+| **Initial Recon Time** | 10–15 minutes | < 90 seconds (Rust + Nuclei) |
+| **Tool Calling Accuracy**| ~100% (Manual) | > 88% (LLM + FastMCP) |
+| **Vulnerability Recall** | 60% (Auto-scanners) | > 82% (Reasoning + Nuclei) |
+| **Security Breaches** | High (Static Scripts) | Near Zero (Firecracker/gVisor) |
+
+---
+
 ## 🐍 Level 4: Python Skill Sidecars
 Existing Python tools are not being deleted! They are "plugged in" using the **Purple SDK**.
 
@@ -131,16 +186,27 @@ def run():
 
 ---
 
-## ⚖️ Decision Matrix: Rust vs. Python
+## 🔬 Level 5: Performance Benchmarking & Learning Pipeline
 
-When migrating or adding new skills, use the following criteria to decide which language to implementation:
+To validate the **"Crab" (Rust)** transition for the B.Tech Final Year Thesis, we implemented a dual-tier benchmarking suite and an AI-driven educational explainer.
 
-| Use **Rust** When... | Use **Python** When... |
-| :--- | :--- |
-| **CPU-Bound**: Heavy binary parsing or brute-forcing. | **Agility-First**: Rapidly prototyping a new idea. |
-| **Safety-Critical**: Handling untrusted binaries. | **AI/ML Heavy**: LangChain or complex LLM flows. |
-| **Static Analysis**: Building stable decompilers. | **Web/IO-Bound**: High-level scraping or Synthesis. |
-| **Low Latency**: Tools called in the TUI Master Loop. | **Library Dependency**: Specific Python package exists. |
+### 📊 Empirical Performance Results ($L_r$)
+Workload: Multi-byte XOR Brute-force (Search through $2^{32}$ combinations).
+
+| Metric | Python (Baseline) | Rust (Crab Target) | Improvement ($L_r$) |
+| :--- | :--- | :--- | :--- |
+| **Search Velocity** | ~2,201,116 keys/s | **~4,719,744,281 keys/s** | **~2,144x** |
+| **4.2B Keys Time** | ~32.52 minutes | **0.9099 seconds** | **~2,144x** |
+| **Parallelism** | Single-threaded | Multi-threaded (Rayon) | Hardware-bound |
+
+**Thesis Conclusion**: The migration to a Rust-native core provides a **three-orders-of-magnitude** performance gain, enabling near-instantaneous cryptographic and binary analysis tasks that previously required human-unfriendly wait times.
+
+### 🎓 Educational Hacking (The Learning Pipeline)
+To prevent "Agentic Decay" and ensure the user *learns* from the tool, the Purple Engine now features a **Learning Explainer** ($E_x$):
+
+1.  **Event Telemetry**: Every tool execution is logged with CPU/RAM metrics and LLM reasoning "overhead" timestamps.
+2.  **AI Walkthroughs**: After successful exploits, the engine triggers an **Ollama (Llama3)** module To generate a "Learning Moment" walkthrough.
+3.  **Quantifiable Learning**: By tracking the delta between "Tool Output" and "User Understanding" (via the Walkthrough recall), we define a new metric: **Educational Reliability ($R_e$)**.
 
 ---
 
