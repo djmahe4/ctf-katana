@@ -1,0 +1,48 @@
+name: superpowers
+version: "1.0.0"
+description: |
+  Adversarial CTF Thinking & Challenge Architect.
+  
+  Generates "AI-hard" challenges using prompt injection, logic-gating, 
+  and structured randomness (Loki-Mode inspired).
+  
+author: Purple Engine Team
+license: MIT
+
+category: security-thinking
+tags:
+  - adversarial
+  - ctf
+  - ai-safety
+  - loki-mode
+  - challenge-gen
+
+entrypoint: run.py
+
+inputs:
+  category:
+    type: string
+    required: true
+    description: CTF Category (e.g., web3, web, pwn, rev, crypto)
+  
+  difficulty:
+    type: string
+    required: false
+    default: medium
+    enum: [easy, medium, hard, insane]
+  
+  complexity:
+    type: number
+    required: false
+    default: 0.8
+    description: Complexity Factor (0.0 to 1.0) for logic branching
+
+outputs:
+  challenge_files:
+    type: array
+  adversarial_report:
+    type: string
+  deployment_guide:
+    type: string
+
+kavach_policy: restricted

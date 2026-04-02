@@ -23,6 +23,9 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from skills.research.knowledge_base import KnowledgeBase, search_knowledge
+from skills.research.chrome_scraper.scraper import ChromeScraper
+from skills.research.vuln_discovery.nuclei_manager import NucleiManager
+from skills.research.agent.recommender import VulnerabilityRecommender
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,7 @@ class ResearchMode(Enum):
     VALIDATE = "validate"
     GENERATE = "generate"
     FULL_CYCLE = "full_cycle"
+    INTERACTIVE = "interactive"
 
 
 class ResearchDepth(Enum):
@@ -107,9 +111,11 @@ class ResearchAgent:
         self,
         ollama_model: str = None,
         ollama_host: str = None,
+        workspace_root: str = None,
     ):
         self.ollama_model = ollama_model or os.environ.get("KATANA_OLLAMA_MODEL", "mistral-nemo")
         self.ollama_host = ollama_host or os.environ.get("KATANA_OLLAMA_HOST", "http://localhost:11434")
+        self.workspace_root = Path(workspace_root or os.getcwd())
         
         # Initialize knowledge base
         self.kb = KnowledgeBase()
@@ -117,8 +123,57 @@ class ResearchAgent:
         # Track findings
         self.findings: List[Finding] = []
         
+        # Initialize specialized tools
+        self.scraper = ChromeScraper()
+        self.nuclei = NucleiManager()
+        self.recommender = VulnerabilityRecommender(agent_context=self)
+        
+        # Phase 3: Discovery Agent integration
+        from skills.research.agent.discovery_agent import DiscoveryAgent
+        self.discovery_agent = DiscoveryAgent(str(self.workspace_root))
+        
         logger.info(f"ResearchAgent initialized with model: {self.ollama_model}")
     
+    async def scout(self, delta_json_url: str = "https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/delta.json") -> List[Dict[str, Any]]:
+        """
+        Executes a 'Scout' run to find new vulnerabilities from the latest deltas.
+        """
+        logger.info(f"Starting Scout run from {delta_json_url}...")
+        
+        import requests
+        try:
+            response = requests.get(delta_json_url, timeout=10)
+            delta_data = response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch delta.json: {e}")
+            return []
+            
+        candidates = self.discovery_agent.scout_deltas(delta_data)
+        report = self.discovery_agent.get_discovery_report(candidates)
+        print("\n" + report)
+        return candidates
+
+    async def hunt(self, cve_id: str):
+        """
+        Performs a 'Deep Dive' analysis on a specific CVE.
+        Delegates to @free-llm-apis for documentation and solver generation.
+        """
+        print(f"\n[*] Starting Deep Dive: {cve_id}...")
+        
+        # Check if Nuclei template exists first
+        nuclei_url = self.nuclei.search_official_template(cve_id)
+        if nuclei_url:
+            print(f"[!] Notification: Official Nuclei template found at: {nuclei_url}")
+            print(f"    Recommendation: Use this template for verification.")
+            confirm = input("    Import this template? (y/n): ").strip().lower()
+            if confirm == 'y':
+                path = self.nuclei.import_template(cve_id, nuclei_url)
+                print(f"[+] Template imported to {path}")
+        
+        # AI Delegation (Signaled to the parent agent)
+        print(f"[*] Task ready for @free-llm-apis to perform deep analysis.")
+        print(f"    Target: {cve_id}\n    Docs will populate in 'docs/vulnerability_catalog/{cve_id}.md'")
+
     def _query_llm(self, prompt: str, system_prompt: str = None) -> str:
         """Query Ollama LLM."""
         try:
@@ -486,6 +541,32 @@ realistic challenges that teach security concepts without being trivially solvab
             },
         )
 
+    def interactive_loop(self, topic: str = "recent"):
+        """
+        Iterative, Human-in-the-Loop research flow.
+        """
+        print(f"\n[+] Entering Interactive Research Mode for: {topic}")
+        
+        # 1. Lazy Ingestion (Index only)
+        print("[*] Observing delta.json via Chrome Scraper...")
+        # (This would be triggered by an actual browser call in the CLI environment)
+        # For now, we use the cached headers.
+        
+        headers = self.scraper.get_cached_headers(limit=5)
+        
+        if not headers:
+            print("[!] No cached vulnerabilities found. Please run a fetch first.")
+            return {"status": "error", "message": "No cache"}
+
+        print("\n--- Recent Vulnerabilities ---")
+        for i, (cve_id, meta) in enumerate(headers.items()):
+            print(f"{i+1}. {cve_id} | Updated: {meta['updated']} | Status: {meta['status']}")
+        
+        print("\n[?] Which CVE would you like to explore? (Enter number or ID)")
+        # In a real CLI, we'd take input here.
+        # This logic will be driven by the user prompts in this session.
+        return {"status": "pending_selection", "candidates": headers}
+
 
 def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -546,6 +627,14 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             }
         elif mode == 'full_cycle':
             result = agent.full_cycle(topic, depth, target)
+        elif mode == 'interactive':
+            result = agent.interactive_loop(topic)
+            return {
+                'status': 'success',
+                'mode': 'interactive',
+                'candidates': result.get('candidates', {}),
+                'message': 'Entering Interactive Mode. Review candidates below.'
+            }
         else:
             return {
                 'status': 'error',
@@ -580,8 +669,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Research Agent CLI')
-    parser.add_argument('mode', choices=['research', 'hunt', 'validate', 'generate', 'full_cycle'])
-    parser.add_argument('--topic', '-t', required=True, help='Research topic')
+    parser.add_argument('mode', choices=['research', 'hunt', 'validate', 'generate', 'full_cycle', 'interactive'])
+    parser.add_argument('--topic', '-t', required=False, default='recent', help='Research topic')
     parser.add_argument('--target', help='Target URL/system')
     parser.add_argument('--depth', choices=['quick', 'medium', 'deep'], default='medium')
     

@@ -1,53 +1,39 @@
-name: web-fuzzer
-version: "1.0.0"
-description: |
-  Intelligent Web Fuzzing Engine
-  
-  AI-powered web application fuzzing:
-  - Smart payload generation
-  - Context-aware fuzzing
-  - Wordlist management
-  - ffuf-style targeting
+name: "fuzzing"
+description: "Advanced Fuzzing & Target Designer for modular web, binary, protocol, and cloud targets."
+version: "2.0.0"
+author: "Antigravity-C4"
 
-author: Purple Engine Team
-license: MIT
+# Modular Handler Configuration
+handlers:
+  - name: "WebHandler"
+    path: "handlers/web_handler.py"
+    modes: ["web", "directory", "parameter"]
+  - name: "BinaryHandler"
+    path: "handlers/binary_handler.py"
+    modes: ["binary", "elf", "pe"]
+  - name: "ProtocolHandler"
+    path: "handlers/protocol_handler.py"
+    modes: ["protocol", "network", "scapy"]
+  - name: "CloudHandler"
+    path: "handlers/cloud_handler.py"
+    modes: ["cloud", "serverless", "emulation"]
 
-category: fuzzing
-tags:
-  - fuzzing
-  - web
-  - payloads
-  - security
+# LLM-Driven Designer Engine
+engines:
+  - name: "FuzzDesigner"
+    path: "engines/fuzz_designer.py"
+    model: "groq/llama-3.3-70b-versatile"
 
-inputs:
-  target:
-    type: string
-    required: true
-    description: Target URL with FUZZ placeholder
-  
-  mode:
-    type: string
-    required: false
-    default: directory
-    enum: [directory, parameter, header, vhost, subdomain]
-  
-  wordlist:
-    type: string
-    required: false
-    description: Wordlist to use
-  
-  payload_type:
-    type: string
-    required: false
-    default: generic
-    enum: [generic, sqli, xss, lfi, rce, ssti]
+# Actions Supported
+actions:
+  - "fuzz"
+  - "analyze"
+  - "harness"
+  - "think"
+  - "mutate"
 
-outputs:
-  status:
-    type: string
-  results:
-    type: array
-  statistics:
-    type: object
-
-kavach_policy: standard
+# Requirements
+dependencies:
+  - "requests"
+  - "scapy"
+  - "argparse"

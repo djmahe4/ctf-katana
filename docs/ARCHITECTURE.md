@@ -1,274 +1,95 @@
-# Architecture
+# Purple Engine: System Architecture
 
-This document describes the internal design of the CTF-Katana agentic AI
-system – an MCP server that orchestrates Ollama-backed agents and Claude-style
-skills to solve Capture-The-Flag challenges.
+This document describes the internal design of the **Purple Engine** (a modernized CTF-Katana) – an agentic AI ecosystem that orchestrates Red Team offensive research, Blue Team defensive hardening, and Human-in-the-Loop (HITL) learning.
 
 ## System Overview
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     MCP Client (LLM host)                    │
-│          e.g. Claude Desktop, VS Code Copilot, CLI           │
-└──────────────────────┬───────────────────────────────────────┘
-                       │  Model Context Protocol (stdio)
-┌──────────────────────▼───────────────────────────────────────┐
-│                   Katana MCP Server                          │
-│                   server/mcp_server.py                       │
-│                                                              │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────────────────┐  │
-│  │Resources │  │ Prompts  │  │         39 Tools           │  │
-│  │ (3)      │  │ (2)      │  │                            │  │
-│  │ summary  │  │ analyze  │  │ ┌────────┐ ┌────────────┐ │  │
-│  │ sections │  │ solve    │  │ │ Skills │ │Agent tools │ │  │
-│  │ categories│  │          │  │ │ (35)   │ │ (4, async) │ │  │
-│  └──────────┘  └──────────┘  │ └───┬────┘ └─────┬──────┘ │  │
-│                              │     │             │        │  │
-│                              └─────┼─────────────┼────────┘  │
-│                                    │             │           │
-│  ┌──────────────┐ ┌───────────────▼─┐ ┌────────▼────────┐  │
-│  │   Registry    │ │     Skills      │ │  Agent Layer     │  │
-│  │  (discovery)  │ │  (10 skills,    │ │  (Ollama LLM)   │  │
-│  │  server/      │ │   each with     │ │                  │  │
-│  │  registry.py  │ │   skill.yaml    │ │  Analyzer        │  │
-│  │               │ │   prompt.md     │ │  Planner         │  │
-│  │  reads YAML   │ │   run.py)       │ │  Executor        │  │
-│  │  loads run()  │ │                 │ │  Reporter        │  │
-│  └──────────────┘ └────────┬────────┘ └────────┬─────────┘  │
-│                            │                    │            │
-│  ┌─────────────────────────▼────────────────────▼─────────┐  │
-│  │            Context: Knowledge Base (README.md)          │  │
-│  │  33 sections · 208 entries · 10 categories              │  │
-│  │  context/knowledge_base.py                              │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                              │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │            Tool Wrappers  (tools/)                      │  │
-│  │  nmap · binwalk · steghide · exiftool · objdump · …    │  │
-│  │  Thin subprocess wrappers called by skills              │  │
-│  └────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
+The Purple Engine operates as a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, exposing security-domain-specific tools and reasoning agents to any MCP-compatible client.
+
+```mermaid
+graph TD
+    subgraph "MCP Client Layer"
+        Client["Claude Desktop / VS Code / TUI (Planned)"]
+    end
+
+    subgraph "Purple Engine (MCP Server)"
+        Server["Katana MCP Server (server/mcp_server.py)"]
+        Registry["Skill Registry (Dynamic Discovery)"]
+        
+        subgraph "Intelligence Layer"
+            Agents["Agent Orchestrator (Ollama)"]
+            Red["Red Team (Attack/Research)"]
+            Blue["Blue Team (Defense/Flagger)"]
+        end
+        
+        subgraph "Capability Layer"
+            Skills["22 Security Skills (skills/)"]
+            KB["Knowledge Base (KNOWLEDGE_BASE.md)"]
+        end
+    end
+
+    subgraph "External Integration"
+        CLI["Security ToolWrappers (tools/)"]
+        Ollama["Ollama LLM (Mistral/Llama3/DeepSeek)"]
+    end
+
+    Client <-->|stdio| Server
+    Server <--> Registry
+    Server <--> Agents
+    Registry <--> Skills
+    Agents <--> Ollama
+    Skills <--> CLI
+    Agents <--> KB
 ```
 
-## Components
+## Core Components
 
-### 1. MCP Server (`server/mcp_server.py`)
+### 1. Unified MCP Server (`server/mcp_server.py`)
+The central entry point built with `FastMCP`. it exposes:
+- **Resources**: Structured views of the `KNOWLEDGE_BASE.md` (metadata, sections, categories).
+- **Tools**: 50+ callable functions, including 22 domain-specific skills and 4 reasoning agent endpoints.
+- **Prompts**: Standardized workflows for analysis and solving.
 
-The central entry point.  Built with
-[FastMCP](https://github.com/modelcontextprotocol/python-sdk), it exposes
-**resources**, **prompts**, and **tools** over the Model Context Protocol's
-stdio transport.
+### 2. Dynamic Skill Registry (`server/registry.py`)
+Decouples execution logic from the server. It automatically discovers and loads security skills by scanning the `skills/` directory. Each skill is a self-contained unit:
+- `skill.yaml`: Metadata, input schemas, and categorization.
+- `prompt.md`: Reasoning instructions for the agent when using this skill.
+- `run.py`: The deterministic execution logic (e.g., calling `nmap` or `binwalk`).
 
-| Surface  | Count | Purpose |
-|----------|------:|---------|
-| Resources | 3 | Read-only knowledge-base views (summary, section list, categories) |
-| Prompts   | 2 | Pre-built templates: `analyze_challenge`, `solve_challenge` |
-| Tools     | 39 | Callable skill functions + agent orchestration endpoints |
+### 3. Agentic Intelligence (`agents/`)
+The "Brain" of the Purple Engine. Four specialized agents handle high-level reasoning:
+- **AnalyzerAgent**: Classifies artifacts and suggests techniques.
+- **PlannerAgent**: Builds the tactical "Red vs Blue" strategy.
+- **ExecutorAgent**: Interprets tool outputs and decides on retries or pivots.
+- **ReporterAgent**: Generates educational write-ups (HITL) and PoC exploits.
 
-### 2. Skill Registry (`server/registry.py`)
+### 4. Purple Team Specialization
+Distinct from generic security tools, the Purple Engine integrates specific offensive and defensive logic:
+- **Red Team (Offense)**: Leveraging `exploitation`, `fuzzing`, and `reversing` skills for autonomous solving.
+- **Blue Team (Defense)**: Utilizing the `flagger` and `firewall` skills for challenge hardening and anti-AI obfuscation.
 
-Discovers skills automatically by scanning the `skills/` directory. For each
-sub-directory it reads `skill.yaml`, loads `prompt.md`, and dynamically imports
-`run.py`. This means adding a new skill is as simple as creating a new
-directory.
-
-### 3. Skills (`skills/`)
-
-Each skill follows the **Claude Skills** pattern – a self-contained directory
-with three files:
-
-```
-skills/<name>/
-├── skill.yaml     → metadata: name, description, inputs, tools, category
-├── prompt.md      → LLM reasoning instructions
-└── run.py         → execution logic with a  run(inputs) -> dict  entry-point
-```
-
-| Skill | Category | Description |
-|-------|----------|-------------|
-| `analysis` | analysis | File type detection, encoding identification, hex dumps |
-| `crypto_solver` | crypto | ROT-13, Caesar, XOR, Base64, Vigenère, Atbash |
-| `stego_solver` | stego | strings, exiftool, binwalk, steghide, zsteg |
-| `forensics` | forensics | foremost, pngcheck, pdftotext, file magic |
-| `web_exploit` | web | HTTP headers, robots.txt, JWT decoding |
-| `reverse_engineering` | reversing | objdump disassembly, nm symbols, readelf |
-| `binary_exploit` | pwn | checksec, ROPgadget, cyclic patterns, GOT/PLT |
-| `recon` | recon | nmap, whois, dig, smbmap |
-| `exploit_gen` | exploit | Ollama-powered PoC script generation |
-| `writeup_generator` | reporting | Ollama-powered write-up generation |
-
-### 4. Tools (`tools/`)
-
-Thin wrappers around external CLI programs. Every wrapper delegates to a shared
-`safe_run()` helper that handles timeouts, missing binaries, and stderr
-capture. Skills call these wrappers—they never run `subprocess` directly.
-
-| Wrapper | External tool(s) |
-|---------|-----------------|
-| `nmap_wrapper.py` | nmap, whois, dig, smbmap, enum4linux |
-| `binwalk_scan.py` | binwalk |
-| `steghide_runner.py` | steghide |
-| `strings_runner.py` | strings |
-| `exiftool_runner.py` | exiftool |
-| `objdump_runner.py` | objdump, nm, readelf |
-| `checksec_runner.py` | checksec, ROPgadget |
-| `curl_runner.py` | curl, gobuster, dirb |
-| `foremost_runner.py` | foremost, unzip |
-| `pdftotext_runner.py` | pdftotext |
-| `pngcheck_runner.py` | pngcheck |
-| `zsteg_runner.py` | zsteg, identify |
-
-### 5. Agents (`agents/`)
-
-Four Ollama-backed agents handle reasoning tasks:
-
-| Agent | Responsibility | Key method |
-|-------|---------------|------------|
-| **AnalyzerAgent** | Inspect artifact, classify CTF category, list observations | `analyze()` / `aanalyze()` |
-| **PlannerAgent** | Produce numbered step-by-step plan with tool names & args | `plan()` / `aplan()` |
-| **ExecutorAgent** | Interpret tool output, decide continue/retry/done, detect flags | `interpret()` / `ainterpret()` |
-| **ReporterAgent** | Generate Markdown write-up and optional exploit PoC | `generate()` / `agenerate()` |
-
-All agents inherit from `BaseAgent` (`agents/base.py`), which wraps the Ollama
-Python client with conversation history and JSON parsing.
-
-### 6. Context (`context/`)
-
-- **`knowledge_base.py`** – Parses the repo's `README.md` into structured
-  `KnowledgeSection` and `KnowledgeEntry` objects, mapping 33 sections to 10
-  canonical categories. Powers `search_knowledge`, `get_knowledge_section`, and
-  `list_knowledge_categories` tools.
-- **`prompts/system_prompt.md`** – The master system prompt describing the
-  agent's capabilities and workflow.
-
-### 7. Configs (`configs/`)
-
-- **`model_config.yaml`** – Ollama provider settings (model name, host,
-  temperature). Overridden by `KATANA_OLLAMA_MODEL` / `KATANA_OLLAMA_HOST` env
-  vars.
-- **`skills_config.yaml`** – Ordered list of skills with `enabled` flag for
-  selective loading.
-
-**Environment variables** (all optional):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KATANA_OLLAMA_MODEL` | `mistral` | Ollama model used by agents |
-| `KATANA_OLLAMA_HOST`  | `http://localhost:11434` | Ollama server URL |
-
-## Solving Workflow
-
-```
-         ┌──────────────┐
-         │ 1. Analyze    │  agent_analyze(artifact_path)
-         │    artifact   │  → file type, category, observations
-         └──────┬───────┘
-                │
-         ┌──────▼───────┐
-         │ 2. Search KB  │  search_knowledge(query)
-         │    for tips   │  → relevant tools & techniques
-         └──────┬───────┘
-                │
-         ┌──────▼───────┐
-         │ 3. Plan       │  agent_plan(analysis_json)
-         │    strategy   │  → ordered list of steps
-         └──────┬───────┘
-                │
-         ┌──────▼───────┐
-         │ 4. Execute    │  skill tools (crypto_*, stego_*, …)
-    ┌───►│    steps      │  → raw tool output
-    │    └──────┬───────┘
-    │           │
-    │    ┌──────▼───────┐
-    │    │ 5. Interpret  │  agent_interpret(step, output)
-    │    │    results    │  → continue / retry / done
-    │    └──────┬───────┘
-    │           │
-    │     ┌─────┴─────┐
-    │     │           │
-    │  continue     done
-    │     │           │
-    └─────┘    ┌──────▼───────┐
-               │ 6. Report    │  agent_report(execution_log)
-               │    write-up  │  → markdown + exploit PoC
-               └──────────────┘
-```
+### 5. Knowledge Context (`context/`)
+- **`knowledge_base.py`**: A specialized parser for [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md). It transforms thousands of lines of legacy CTF research into a searchable RAG context for agents.
+- **`system_prompt.md`**: Defines the "Purple Engine" identity, enforcing the Red/Blue orchestration and educational focus.
 
 ## Directory Layout
 
-```
+```text
 .
-├── README.md                  # Living knowledge base (original Katana content)
-├── docs/
-│   └── ARCHITECTURE.md        # This file
-├── pyproject.toml             # Project metadata & entry-point
-├── requirements.txt           # Pinned runtime dependencies
-│
-├── server/                    # ── MCP orchestration ──
-│   ├── __init__.py
-│   ├── mcp_server.py          # FastMCP server – registers tools/resources/prompts
-│   └── registry.py            # Discovers & loads skills from skills/
-│
-├── skills/                    # ── Claude Skills (1 dir per skill) ──
-│   ├── analysis/
-│   │   ├── skill.yaml         # Metadata: name, inputs, category
-│   │   ├── prompt.md          # LLM reasoning instructions
-│   │   └── run.py             # Execution logic: run(inputs) -> dict
-│   ├── crypto_solver/
-│   │   └── …
-│   ├── stego_solver/
-│   │   └── …
-│   ├── forensics/
-│   │   └── …
-│   ├── web_exploit/
-│   │   └── …
-│   ├── reverse_engineering/
-│   │   └── …
-│   ├── binary_exploit/
-│   │   └── …
-│   ├── recon/
-│   │   └── …
-│   ├── exploit_gen/           # Ollama-backed PoC generation
-│   │   └── …
-│   └── writeup_generator/     # Ollama-backed write-up generation
-│       └── …
-│
-├── tools/                     # ── External tool wrappers ──
-│   ├── __init__.py            # safe_run(), detect_file_type(), hex_dump()
-│   ├── nmap_wrapper.py
-│   ├── binwalk_scan.py
-│   ├── steghide_runner.py
-│   ├── strings_runner.py
-│   ├── exiftool_runner.py
-│   ├── objdump_runner.py
-│   ├── checksec_runner.py
-│   ├── curl_runner.py
-│   ├── foremost_runner.py
-│   ├── pdftotext_runner.py
-│   ├── pngcheck_runner.py
-│   └── zsteg_runner.py
-│
-├── agents/                    # ── Ollama-backed reasoning agents ──
-│   ├── __init__.py
-│   ├── base.py                # BaseAgent (Ollama wrapper)
-│   ├── analyzer.py            # AnalyzerAgent
-│   ├── planner.py             # PlannerAgent
-│   ├── executor.py            # ExecutorAgent
-│   └── reporter.py            # ReporterAgent
-│
-├── context/                   # ── Knowledge base & system prompts ──
-│   ├── __init__.py
-│   ├── knowledge_base.py      # README parser → searchable sections
-│   └── prompts/
-│       └── system_prompt.md   # Master system prompt
-│
-├── configs/                   # ── Configuration ──
-│   ├── model_config.yaml      # Ollama provider settings
-│   └── skills_config.yaml     # Skill registry & enable/disable
-│
-└── tests/                     # ── Test suite ──
-    ├── test_knowledge_base.py
-    ├── test_registry.py
-    ├── test_server.py
-    └── test_skills.py
+├── KNOWLEDGE_BASE.md          # 1800+ lines of legacy CTF research (RAG source)
+├── README.md                  # Project landing page
+├── server/                    # MCP server core & skill registry
+├── skills/                    # 22 self-contained security skills
+│   ├── flagger/               # Blue Team: Anti-AI flag hardening
+│   ├── exploitation/          # Red Team: Offensive research
+│   └── ...
+├── tools/                     # Thin CLI wrappers for external binaries
+├── agents/                    # Ollama-backed reasoning intelligence
+├── context/                   # Knowledge base parsers & system prompts
+└── configs/                   # Model and skill feature flags
 ```
+
+## Future Roadmap (Phase 5)
+1. **TUI/GUI Layer**: Interactive dashboard for the Purple Engine ecosystem.
+2. **Integration Testing**: End-to-end verification of the Red-Blue solving loop.
+3. **Automated Deployment**: One-click deployment via Ollama/Docker configurations.

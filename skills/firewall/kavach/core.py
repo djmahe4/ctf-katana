@@ -27,6 +27,7 @@ from .exceptions import (
     PIIDetectionError,
     FileAccessViolation,
 )
+from .monitor import TripwireMonitor, AutoEnforcer
 
 logger = logging.getLogger(__name__)
 
@@ -622,7 +623,19 @@ class KavachWrapper:
             )
         else:
             self.phantom_workspace = None
-        
+
+        if self.policy.enable_tripwires:
+            self.tripwire = TripwireMonitor(workspace=self.workspace)
+            self.tripwire.deploy()
+        else:
+            self.tripwire = None
+
+        if self.policy.enable_process_monitoring:
+            self.auto_enforcer = AutoEnforcer(timeout_seconds=self.policy.execution_timeout)
+            self.auto_enforcer.start()
+        else:
+            self.auto_enforcer = None
+
         self.error_count = 0
         self.skill_name = "unknown"
     
@@ -733,4 +746,10 @@ class KavachWrapper:
         if self.phantom_workspace:
             self.phantom_workspace.discard_changes()
         
+        if self.tripwire:
+            self.tripwire.cleanup()
+
+        if self.auto_enforcer:
+            self.auto_enforcer.stop()
+            
         logger.info("Kavach wrapper cleanup complete")

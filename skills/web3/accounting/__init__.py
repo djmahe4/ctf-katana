@@ -1,1 +1,0 @@
-"""Purple Engine - accounting skill."""

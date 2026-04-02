@@ -10,6 +10,13 @@ build/
 venv/
 env/
 .env
+.env.*
+credentials.txt
+system_auth_tokens.json
+cve_cache.json
+scout_state.json
+*.bak
+output/
 .pytest_cache/
 .mypy_cache/
 *.swp

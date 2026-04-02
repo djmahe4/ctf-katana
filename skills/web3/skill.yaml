@@ -1,14 +1,10 @@
 name: web3-analyzer
-version: "1.0.0"
+version: "2.1.0"
 description: |
-  Web3 Smart Contract Vulnerability Analyzer
+  Modular Multi-Chain Smart Contract Vulnerability Analyzer
   
-  Comprehensive analysis of Solidity/EVM smart contracts for:
-  - Reentrancy vulnerabilities
-  - Flash loan attack vectors
-  - Integer overflow/underflow
-  - Access control issues
-  - Logic bugs and accounting errors
+  Comprehensive analysis of Ethereum (Solidity), Solana (Rust/Anchor), 
+  and Algorand (TEAL) smart contracts with LLM-assisted deep refinement.
 
 author: Purple Engine Team
 license: MIT
@@ -17,9 +13,14 @@ category: web3
 tags:
   - smart-contracts
   - solidity
+  - rust
+  - solana
+  - algorand
   - defi
   - blockchain
   - security
+
+entrypoint: run.py
 
 inputs:
   target:
@@ -27,17 +28,25 @@ inputs:
     required: true
     description: Contract address, source file, or GitHub repo
   
-  mode:
+  chain_type:
     type: string
-    required: false
-    default: full
-    enum: [reentrancy, flash_loan, accounting, access_control, full]
+    required: true
+    description: Target blockchain (ethereum, solana, algorand)
+    enum: [ethereum, solana, algorand]
   
   network:
     type: string
     required: false
     default: mainnet
+    description: Blockchain network environment
     enum: [mainnet, goerli, sepolia, polygon, arbitrum, optimism, bsc]
+
+  mode:
+    type: string
+    required: false
+    default: full
+    description: Analysis depth
+    enum: [fast, deep, full]
 
 outputs:
   status:

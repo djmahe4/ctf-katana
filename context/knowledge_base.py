@@ -191,9 +191,9 @@ class KnowledgeBase:
 
     @classmethod
     def from_readme(cls, path: Optional[str | Path] = None) -> "KnowledgeBase":
-        """Parse the README at *path* (defaults to ``README.md`` in repo root)."""
+        """Parse the knowledge base at *path* (defaults to ``KNOWLEDGE_BASE.md`` in repo root)."""
         if path is None:
-            path = Path(__file__).resolve().parent.parent / "README.md"
+            path = Path(__file__).resolve().parent.parent / "KNOWLEDGE_BASE.md"
         else:
             path = Path(path)
 
