@@ -19,13 +19,13 @@ from datetime import datetime
 from enum import Enum
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from skills.research.knowledge_base import KnowledgeBase, search_knowledge
-from skills.research.chrome_scraper.scraper import ChromeScraper
-from skills.research.vuln_discovery.nuclei_manager import NucleiManager
-from skills.research.agent.recommender import VulnerabilityRecommender
+from context.knowledge_base import KnowledgeBase, search_knowledge
+from skills.research_chrome_scraper.scraper import ChromeScraper
+from skills.research_vuln_discovery.nuclei_manager import NucleiManager
+from skills.research_agent.recommender import VulnerabilityRecommender
 
 logger = logging.getLogger(__name__)
 

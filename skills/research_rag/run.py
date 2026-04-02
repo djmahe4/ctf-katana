@@ -10,14 +10,14 @@ import sys
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from skills.research.knowledge_base import KnowledgeBase, Document, search_knowledge
+from context.knowledge_base import KnowledgeBase, Document, search_knowledge
 
 logger = logging.getLogger(__name__)
 
@@ -180,14 +180,15 @@ class RAGSkill:
         
         try:
             import requests
-            
+            b="main"
             # Get repo README first
-            readme_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/main/README.md"
+            readme_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{b}/README.md"
             response = requests.get(readme_url, timeout=30)
             
             if response.status_code == 404:
                 # Try master branch
-                readme_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/master/README.md"
+                b="master"
+                readme_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{b}/README.md"
                 response = requests.get(readme_url, timeout=30)
             
             if response.status_code == 200:
@@ -198,7 +199,7 @@ class RAGSkill:
                     title=f"{repo_name} README",
                     url=repo_url,
                     tags=["readme", "documentation"],
-                    metadata={"owner": owner, "branch": "main"},
+                    metadata={"owner": owner, "branch": b},
                 )
             
             # Get repo info via API
