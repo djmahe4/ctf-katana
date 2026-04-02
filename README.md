@@ -68,30 +68,30 @@ graph LR
     E -- retry --o C
 ```
 
-1. **Analyze**: `agent_analyze` identifies artifact types and suggests initial techniques.
-2. **Search**: Queries the [Legacy Knowledge Base](KNOWLEDGE_BASE.md) for pre-canned commands.
-3. **Plan**: `agent_plan` builds a tactical implementation strategy.
-4. **Execute**: 22+ specialized skill tools carry out the heavy lifting.
-5. **Interpret**: Agents review results to detect flags or adjust the plan.
-6. **Report (HITL)**: `agent_report` generates human-readable walkthroughs and PoCs.
+- **Analyze**: `agent_analyze` identifies artifact types and suggests initial techniques.
+1. **Synthesize**: `web` synthesis mode automates the generation of vulnerable Dockerized challenges.
+3. **Search**: Queries the [Legacy Knowledge Base](KNOWLEDGE_BASE.md) for pre-canned techniques.
+4. **Plan**: `agent_plan` builds a tactical "Red vs Blue" strategy.
+5. **Execute**: 30+ specialized skill tools carry out the automated solving.
+6. **Shield**: `kavach_shield` applies Protection-as-Code (PaC) and hardened scaffolding.
+1. **Report (HITL)**: `agent_report` generates human-readable walkthroughs and PoCs.
 
-## Capability Registry (22 Skills)
+## Capability Registry (30+ Skills)
 
-The Purple Engine exposes a dynamic registry of 22 specialized security skills, categorised by domain:
+The Purple Engine exposes a dynamic registry of 30+ specialized security skills, categorised by domain:
 
-- **Analysis**: Metadata extraction, encoding identification.
-- **Crypto**: Multi-tier ciphers, brute-force cracking, RSA attacks.
-- **Stego**: LSB analysis, file carving, strings extraction.
-- **Forensics**: Magic numbers, PDF extraction, binary analysis.
-- **Web**: Protocol headers, JWT decoding, vulnerability fuzzing.
-- **Reverse Engineering**: Disassembly, symbol analysis, ELF/PE inspection.
-- **Pwn**: Buffer overflow offsets, ROP gadget mapping.
-- **Blue Team/Hardening**: Anti-AI flag obfuscation (the `flagger` skill).
+- **Analysis & Recon**: Metadata extraction, encoding identification, surface mapping.
+- **Web & Synthesis**: Vulnerability fuzzing, JWT decoding, and automated environment synthesis.
+- **Crypto & Stego**: Multi-tier ciphers, brute-force cracking, LSB analysis, file carving.
+- **Forensics & RE**: Magic numbers, PDF extraction, disassembly, ELF/PE inspection.
+- **Binary & Web3**: Buffer overflow offsets, ROP gadgets, reentrancy analysis, smart contract audit.
+- **Blue Team / Kavach Shield**: Anti-AI flag obfuscation and Protection-as-Code (PaC) hardening.
+- **IoT & Android**: Firmware analysis, APK inspection, and mobile exploitation.
 
 ## Project Ecosystem
 
 - `server/`: MCP orchestration and skill discovery.
-- `skills/`: The core registry of 22 offensive/defensive capabilities.
+- `skills/`: The core registry of 30+ offensive/defensive capabilities.
 - `agents/`: Ollama-backed reasoning intelligence.
 - `context/`: Knowledge base parsers and system prompts.
 - `docs/`: Detailed blueprints, history, and the new **Purple Engine** roadmap.
