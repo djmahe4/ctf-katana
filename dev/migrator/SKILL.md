@@ -9,12 +9,12 @@ The `raum-dev-migrator` skill ensures that the transition from Python to Rust is
 
 ## Context Anchors
 
-- **Canonical Guide**: [MIGRATION_GUIDE.md](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md)
-- **Current Roadmap**: [PROGRESS.md](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/PROGRESS.md)
+- **Canonical Guide**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
+- **Current Roadmap**: [PROGRESS.md](docs/PROGRESS.md)
 
 ## Migration Workflow
 
-1.  **Analyze & Align**: Identify CPU-bound logic and align it with the project's [Migration Strategy](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md) to determine the target Level (1-5).
+1.  **Analyze & Align**: Identify CPU-bound logic and align it with the project's [Migration Strategy](docs/MIGRATION_GUIDE.md) to determine the target Level (1-5).
 2.  **Research Crates**: Use **context7** to find the modern Rust equivalent (see [Library Mapping](references/library-mapping.md)).
 3.  **Refactor with AI**: Invoke **@free-llms** with the prompt: *"Port this Python logic to a high-performance Rust sidecar following the patterns in dev/migrator/references/sidecar-patterns.md"*.
 4.  **Implement Sidecar**: Deploy as a Level 4 Rust binary sidecar or a Level 2 Rust core module.

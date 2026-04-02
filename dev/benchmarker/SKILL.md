@@ -9,15 +9,15 @@ The `raum-dev-benchmarker` skill is the "truth engine" for your thesis. It provi
 
 ## Context Anchors
 
-- **Performance Baselines**: [PROGRESS.md](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/PROGRESS.md)
-- **Experimental Goals**: [Level 3.5: Performance Optimization](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
+- **Performance Baselines**: [PROGRESS.md](docs/PROGRESS.md)
+- **Experimental Goals**: [Level 3.5: Performance Optimization](docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
 
 ## Benchmarking Workflow
 
 1.  **Prepare Environment**: Ensure `cargo build --release` has been run for the current Rust kernels.
-2.  **Execute Runner**: Run the [Benchmark Runner](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/research/benchmarks/runner.py).
+2.  **Execute Runner**: Run the [Benchmark Runner](research/benchmarks/runner.py).
 3.  **Analyze Results**: Invoke **@free-llms** with the prompt: *"Analyze these benchmark logs. Calculate the Latency Reduction Ratio (L_r) and update the baselines in dev/benchmarker/references/lr-baselines.md"*.
-4.  **Update Progress**: Use the [Report Templates](references/report-templates.md) to update [PROGRESS.md](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/PROGRESS.md) and [MIGRATION_GUIDE.md](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md).
+4.  **Update Progress**: Use the [Report Templates](references/report-templates.md) to update [PROGRESS.md](docs/PROGRESS.md) and [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md).
 
 ## Success Conditions
 

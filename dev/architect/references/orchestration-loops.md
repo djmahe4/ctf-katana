@@ -15,4 +15,14 @@ If **Verify** fails, the loop restarts at **Analyze** with the failure logs as f
 
 ## Best Practices
 -   **No Stubs**: Replace `# TODO` placeholders in orchestrators with actual sub-agent calls.
+-   Also check '# In a real scenario', '# Handoff', '# Verification' or '# Refactor' or '# Placeholder' in the code for more details.
 -   **Async First**: Ensure loop iterations do not block the MCP stdio transport.
+
+## Commands
+- `grep -rn "# TODO" .` : To find all the TODOs in the code.
+- `grep -rn "# In a real scenario" .` : To find all the In a real scenario in the code.
+
+### Dirs and filetypes to ignore
+
+REFER [.gitignore](./.gitignore)
+

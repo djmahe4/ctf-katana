@@ -9,12 +9,12 @@ The `raum-dev-debugger` skill ensures the stability of the **ctf-katana** multi-
 
 ## Context Anchors
 
-- **Transport Architecture**: [MIGRATION_GUIDE.md](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md)
-- **Engine Blueprint**: [Crab Engine (Rust Host)](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md#🦀-level-2-the-crab-engine-rust-host)
+- **Transport Architecture**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
+- **Engine Blueprint**: [Crab Engine (Rust Host)](docs/MIGRATION_GUIDE.md#🦀-level-2-the-crab-engine-rust-host)
 
 ## Debugging Workflow
 
-1.  **Isolate & Align**: Determine the failure point and align with the [Transport Specs](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md) to verify expected behavior.
+1.  **Isolate & Align**: Determine the failure point and align with the [Transport Specs](docs/MIGRATION_GUIDE.md) to verify expected behavior.
 2.  **Analyze Transport**: Use [Transport Diagnostics](references/transport-diagnostics.md) to check for JSON-RPC malformation or stdio pollution.
 3.  **Resolve Async Debt**: If the system hangs during a Rust transition, consult [Async Debt Resolution](references/async-debt-resolution.md).
 4.  **Root Cause with AI**: Invoke **@free-llms** with the task: *"Perform a root cause analysis on these trace logs. Identify if the hang is due to a blocked event loop or a transport deadlock."*

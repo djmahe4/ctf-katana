@@ -9,12 +9,12 @@ This skill guides the evolution of the **ctf-katana** orchestration engine. It e
 
 ## Context Anchors
 
-- **Canonical Guide**: [MIGRATION_GUIDE.md](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md)
-- **Architecture Source**: [Level 3.5: Agentic Security Hardening](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
+- **Canonical Guide**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
+- **Architecture Source**: [Level 3.5: Agentic Security Hardening](docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
 
 ## Orchestration Flow
 
-1.  **Identify Boundary**: Determine if a task requires multiple skills and align with the [Level 3.5 Strategy](file:///c:/Users/mahes/OneDrive/Desktop/Python-Projects/ctf-katana/docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization).
+1.  **Identify Boundary**: Determine if a task requires multiple skills and align with the [Level 3.5 Strategy](docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization).
 2.  **Plan Handoff**: Use the [Handoff Protocol](references/handoff-protocol.md) to define the shared state.
 3.  **Implement Loop**: Use [Orchestration Loops](references/orchestration-loops.md) to wrap the execution in a verification cycle.
 4.  **Refactor with AI**: When modifying the core orchestrator, invoke **@free-llms** to ensure thread-safety and async compatibility.
