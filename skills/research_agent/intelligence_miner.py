@@ -11,6 +11,16 @@ from skills.research_chrome_scraper.scraper import ChromeScraper, fetch_raw_json
 
 logger = logging.getLogger(__name__)
 
+def _detect_lang_from_content(content: str) -> Optional[str]:
+    """Lightweight regex to identify language hints in code snippets."""
+    c = content.lower()
+    if "pragma solidity" in c or "contract " in c: return "solidity"
+    if "import java." in c or "public class " in c: return "java"
+    if "<?php" in c: return "php"
+    if "#include <" in c: return "c"
+    if "def " in c and "import " in c: return "python"
+    return None
+
 class IntelligenceMiner:
     """
     Intelligence Miner for Phase 3.
@@ -110,6 +120,10 @@ class IntelligenceMiner:
                     # Combine context and code for RAG
                     full_snippet = f"--- CONTEXT ---\n{snippet['context']}\n--- CODE ---\n{snippet['code']}"
                     
+                    # Extract extension hint from URL if possible
+                    ext_hint = os.path.splitext(url.split('?')[0])[1].lower() if '.' in url else ""
+                    lang_hint = _detect_lang_from_content(snippet['code'])
+                    
                     self.rag.add_document(
                         content=full_snippet,
                         source="intelligence_miner",
@@ -120,10 +134,18 @@ class IntelligenceMiner:
                             "cve_id": cve_id,
                             "purpose": snippet["purpose"],
                             "type": "snippet",
-                            "scraped_at": content.get("scraped_at", "")
+                            "scraped_at": content.get("scraped_at", ""),
+                            "source_extension": ext_hint,
+                            "language_hint": lang_hint
                         }
                     )
-                    intelligence.append({"url": url, "type": snippet["purpose"], "content": snippet["code"]})
+                    intelligence.append({
+                        "url": url, 
+                        "type": snippet["purpose"], 
+                        "content": snippet["code"],
+                        "source_extension": ext_hint,
+                        "language_hint": lang_hint
+                    })
                 
                 # 4.2 Recursive Link Discovery
                 # Use regex to find potential commit/pull references in the text

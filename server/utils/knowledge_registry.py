@@ -66,8 +66,6 @@ class KnowledgeRegistry:
         """
         Cascading query across tiers based on intent.
         """
-        # Auto-bootstrapping Tier 2 (Pro) if empty
-        self.ensure_bootstrapped()
 
         if not intent:
             intent = self.recognize_intent(query_str)
@@ -143,8 +141,15 @@ class KnowledgeRegistry:
                 "content": doc.content,
                 "purpose": doc.metadata.get("purpose", "general"),
                 "context": doc.metadata.get("context", ""),
-                "source": doc.metadata.get("source", "unknown")
+                "source": doc.metadata.get("source", "unknown"),
+                "source_extension": doc.metadata.get("source_extension", ""),
             })
+
+        # Logic Gate: Identify grounding state
+        if snippets:
+            logger.info(f"🧩 Grounding synthesis with {len(snippets)} intelligence snippets (Hints: {[s.get('language_hint') for s in snippets]})")
+        else:
+            logger.warning("⚠️ No intelligence snippets found. Synthesis will rely on standard templates.")
 
         # 6. Logic Gate: Proceed if we have both exploit and patch intelligence
         has_logic = len(exploit_docs) > 0 and len(patch_docs) > 0

@@ -389,8 +389,19 @@ class ChallengeGenerator:
         
         cat = category.lower() if category else "web"
         
-        # 1. High-confidence detection from snippets first
+        # 1. High-confidence detection from metadata hints first
         if snippets:
+            # Check for explicitly tagged language hints from IntelligenceMiner
+            hints = [s.get('language_hint') for s in snippets if s.get('language_hint')]
+            if hints:
+                hint = hints[0].lower()
+                if "solidity" in hint or "vyper" in hint: return "Solidity/Vyper (Web3)"
+                if "java" in hint: return "Java"
+                if "php" in hint: return "PHP"
+                if "c" == hint or "cpp" == hint: return "C/C++"
+                if "python" in hint: return "Python (Flask)"
+
+            # Fallback to standard content detection
             content = " ".join([s.get('content', '') for s in snippets]).lower()
             source = " ".join([s.get('source', '') or "" for s in snippets]).lower()
             
@@ -435,11 +446,12 @@ class ChallengeGenerator:
     def _get_required_build_files(self, category: str) -> List[str]:
         """Identify required build/manifest files for a given category."""
         cat_lower = category.lower()
-        if cat_lower == "iot":
+        if cat_lower in ["iot", "pwn", "reverse"]:
             return ["Makefile"]
         if cat_lower in ["web3", "blockchain"]:
             return ["package.json", "hardhat.config.js"]
         if cat_lower == "web":
+            # For web, we might need Dockerfile + requirements.txt
             return ["requirements.txt", "Dockerfile"]
         return []
 
@@ -480,12 +492,19 @@ DOMAIN/LANGUAGE: {detected_lang}
 VULNERABILITY: {vuln_type} ({category})
 DIFFICULTY: {difficulty.value}
 
-## GROUNDING INTELLIGENCE
+## GROUNDING INTELLIGENCE (CRITICAL)
+Use the FOLLOWING SPECIFIC LOGIC for the vulnerability. DO NOT invent generic logic if these patterns provide a base:
+
 EXPLOIT PATTERN:
 {exploit_snippet}
 
 PATCH STRATEGY:
 {patch_snippet}
+
+## STRICT GROUNDING REQUIREMENTS:
+1. **Source Fidelity**: If EXPLOIT PATTERN shows a specific function name or data structure, YOU MUST USE IT.
+2. **No Hallucinations**: Do not add unnecessary features (e.g., auth systems, complex DBs) unless they are in the GROUNDING snippets.
+3. **Detected Language**: You must output in {detected_lang}. If source_extension was provided, ensure the main file name matches.
 
 ## LOGIC CONTEXT
 {json.dumps(logic_delta, indent=2) if logic_delta else ""}
@@ -569,38 +588,26 @@ PATCH STRATEGY:
         """Robustly strip markdown code blocks and leaked language tags."""
         content = content.strip()
         
-        # 1. Try standard triple backtick blocks (with optional newline after tag)
-        pattern = r'```(?:\w+)?\s*\n?(.*?)(?:\n```|```|$)'
-        match = re.search(pattern, content, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-            
-        # 2. Fallback: manual stripping if backticks remain
-        if "```" in content:
-            lines = content.split('\n')
-            clean_lines = []
-            skip_words = {'javascript', 'json', 'python', 'sql', 'solidity', 
-                         'c', 'cpp', 'vyper', 'bash', 'sh', 'java', 'go', 'rust'}
-            
-            for line in lines:
-                stripped = line.strip()
-                if stripped.startswith('```'):
-                    # Check if standard tag is on same line: ```javascript
-                    remaining = stripped[3:].strip().lower()
-                    if remaining in skip_words:
-                        continue
-                    if remaining: # Keep it if it's not a known skip word
-                        clean_lines.append(stripped[3:])
-                else:
-                    # Check for leaked single-word tags at the very start
-                    if not clean_lines and stripped.lower() in skip_words:
-                        continue
-                    clean_lines.append(line)
-            
-            cleaned = "\n".join(clean_lines).strip()
-            return cleaned.replace('```', '').strip()
-            
-        return content
+        # 1. Remove obvious markdown code blocks with regex
+        # Pattern handles optional language identifiers (python, javascript, etc.) and preserves content
+        content = re.sub(r'^```\w*\n', '', content)
+        content = re.sub(r'```$', '', content)
+        
+        # 2. Handle cases where the marker is inline or at start of lines without newline
+        if content.startswith("```"):
+            content = re.sub(r'^```[\w\-]*', '', content).strip()
+        if content.endswith("```"):
+            content = content[:-3].strip()
+
+        # 3. Final sanitization: strip any leading language names that leaked out of the block
+        lines = content.split('\n')
+        if lines:
+            first_line = lines[0].strip().lower()
+            skip_words = {'python', 'javascript', 'json', 'solidity', 'vyper', 'java', 'c', 'cpp', 'bash', 'sh'}
+            if first_line in skip_words:
+                content = "\n".join(lines[1:]).strip()
+                
+        return content.strip()
 
     def _generate_fallback_artifact(self, name: str, existing_files: List[Dict[str, str]], lang: str) -> str:
         """Use LLM to generate a missing build artifact contextually."""
