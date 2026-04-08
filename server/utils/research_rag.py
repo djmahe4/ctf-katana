@@ -453,6 +453,7 @@ class ResearchRAG:
         tags: Optional[List[str]] = None,
         min_relevance: float = 0.0,
         preferred_source_type: Optional[str] = None,
+        where: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
         """
         Semantic search over the research RAG.
@@ -460,15 +461,15 @@ class ResearchRAG:
         Returns: List of SearchResults sorted by relevance
         """
         # Build where filter
-        where = {}
+        final_where = where or {}
         if source_type:
-            where["source_type"] = source_type
+            final_where["source_type"] = source_type
         
         # Query ChromaDB
         results = self._collection.query(
             query_texts=[query],
             n_results=limit * 3,  # Get more, then filter and boost
-            where=where if where else None,
+            where=final_where if final_where else None,
             include=["documents", "metadatas", "distances"],
         )
         

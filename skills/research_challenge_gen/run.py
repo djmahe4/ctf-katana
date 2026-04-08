@@ -363,8 +363,12 @@ class ChallengeGenerator:
         difficulty: Difficulty = Difficulty.MEDIUM,
         ai_hardening: AIHardening = AIHardening.STANDARD,
         logic_delta: Dict[str, Any] = None,
+        snippets: List[Dict[str, Any]] = None,
     ) -> CTFChallenge:
-        """Generate challenge from a vulnerability finding."""
+        """
+        Generate challenge from a vulnerability finding.
+        Grounds the generation in the provided intelligence snippets (exploit/patch code).
+        """
         vuln_type = finding.get('vuln_type', 'unknown')
         title = finding.get('title', 'Security Challenge')
         
@@ -394,11 +398,15 @@ class ChallengeGenerator:
         desc_templates = template.get('description_templates', [finding.get('description', '')])
         description = random.choice(desc_templates)
         
-        # Enhance description with logic delta
+        # Enhance description with logic delta and snippets
         if logic_delta:
             logic_desc = f"\n\nContext: The root cause involves {logic_delta.get('vulnerability_root')}. "
             logic_desc += f"A common fix strategy is {logic_delta.get('fix_strategy')}, but you need to find a bypass."
             description += logic_desc
+        
+        if snippets:
+            # Add a small hint about the origin if snippets exist
+            description += "\n\nThis challenge is based on real-world vulnerability intelligence patterns."
             
         # Generate flag
         keywords = template.get('flag_keywords', ['flag', 'ctf'])
@@ -406,14 +414,32 @@ class ChallengeGenerator:
         
         # Generate hints
         hints = self._generate_hints(vuln_type, difficulty)
+        if snippets:
+            # Add a hint derived from patch context if available
+            patch_snippets = [s for s in snippets if s['purpose'] == 'patch']
+            if patch_snippets:
+                hints.append(ChallengeHint(cost=100, text=f"Hint: Consider how {patch_snippets[0].get('context', 'the system logic')} was originally intended to work."))
 
         # Create solution
+        snippet_summary = ""
+        if snippets:
+            exploit_code = next((s['content'] for s in snippets if s['purpose'] == 'exploit'), None)
+            patch_code = next((s['content'] for s in snippets if s['purpose'] == 'patch'), None)
+            
+            if exploit_code:
+                snippet_summary += f"\n### Reference Exploit Intelligence\n```\n{exploit_code[:500]}...\n```\n"
+            if patch_code:
+                snippet_summary += f"\n### Reference Patch Intelligence\n```\n{patch_code[:500]}...\n```\n"
+
         solution = ChallengeSolution(
             walkthrough=f"""## Solution for {name}
 
 This challenge demonstrates a {vuln_type} vulnerability.
 
-### logic Analysis Summary
+### Intelligence Context
+{snippet_summary}
+
+### Logic Analysis Summary
 - **Root Cause**: {logic_delta.get('vulnerability_root') if logic_delta else 'Refer to finding'}
 - **Hardening Strategy**: {logic_delta.get('hardening_delta') if logic_delta else 'Standard templates'}
 
@@ -447,6 +473,53 @@ The flag is: {flag}
         challenge = self._apply_hardening(challenge, ai_hardening)
         
         return challenge
+
+    async def generate_from_cve(
+        self,
+        cve_id: str,
+        registry: Any,
+        difficulty: Difficulty = Difficulty.MEDIUM,
+        ai_hardening: AIHardening = AIHardening.STANDARD,
+    ) -> CTFChallenge:
+        """
+        Direct entry point to generate a challenge from a CVE ID.
+        Retrieves deep intelligence via the KnowledgeRegistry and synthesizes the challenge.
+        """
+        logger.info(f"Generating challenge for {cve_id}...")
+        
+        # 1. Retrieve Deep Intelligence from Registry
+        # Intent 'cve' triggers internal synthesize_purple_loop
+        intelligence = await registry.query(cve_id, intent="cve")
+        purple_loop = intelligence.get("purple_loop", {})
+        
+        # 2. Bridge intelligence to a Finding-like structure
+        finding = {
+            "id": cve_id,
+            "title": f"Challenge based on {cve_id}",
+            "vuln_type": self._map_root_to_vuln_type(purple_loop.get("vulnerability_root", "")),
+            "description": f"A security challenge derived from {cve_id} analysis.",
+        }
+        
+        # 3. Delegate to core generator
+        return self.generate_from_finding(
+            finding=finding,
+            difficulty=difficulty,
+            ai_hardening=ai_hardening,
+            logic_delta=purple_loop.get("logic_delta"),
+            snippets=purple_loop.get("intelligence_snippets")
+        )
+
+    def _map_root_to_vuln_type(self, root: str) -> str:
+        """Heuristic mapping of vulnerability root path/desc to template type."""
+        root_lower = str(root).lower()
+        if ".py" in root_lower or "python" in root_lower:
+            return "command_injection"
+        if ".js" in root_lower or "node" in root_lower:
+            return "xss"
+        if "sql" in root_lower:
+            return "sqli"
+        
+        return "command_injection" # Default template
     
     def generate_from_template(
         self,
@@ -539,6 +612,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     category_str = params.get('category')
     ai_hardening_str = params.get('ai_hardening', 'standard')
     logic_delta = params.get('logic_delta')
+    snippets = params.get('intelligence_snippets')
     
     if not finding and not vuln_type:
         return {
@@ -572,6 +646,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 difficulty=difficulty,
                 ai_hardening=ai_hardening,
                 logic_delta=logic_delta,
+                snippets=snippets,
             )
         else:
             challenge = generator.generate_from_template(

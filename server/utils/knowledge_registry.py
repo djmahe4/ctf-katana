@@ -110,10 +110,17 @@ class KnowledgeRegistry:
         """
         logger.info(f"Synthesizing Purple Loop for {intent}...")
         
-        # 1. Search semantic tier for Exploit vs Patch
-        exploit_docs = self.rag.search(f"{query} exploit POC", limit=3)
-        patch_docs = self.rag.search(f"{query} fix patch", limit=3)
+        # 1. Search semantic tier for Exploit vs Patch using specific metadata filters
+        # We also pass semantic keywords to refine the vector search (LLM suggested)
+        exploit_docs = self.rag.search(f"{query} exploit POC code", limit=5, where={"purpose": "exploit"})
+        patch_docs = self.rag.search(f"{query} security fix patch diff", limit=5, where={"purpose": "patch"})
         
+        # Fallback to general search if classified snippets are missing
+        if not exploit_docs:
+            exploit_docs = self.rag.search(f"{query} exploit POC", limit=3)
+        if not patch_docs:
+            patch_docs = self.rag.search(f"{query} fix patch", limit=3)
+
         # 2. Extract Data for Analysis
         exploit_text = "\n---\n".join([res.content for res in exploit_docs]) if exploit_docs else "No exploit POC found."
         patch_text = "\n---\n".join([res.content for res in patch_docs]) if patch_docs else "No fix patch found."
@@ -129,8 +136,18 @@ class KnowledgeRegistry:
             if paths:
                 sink = paths[0]
         
-        # 5. Logic Gate: Proceed if we have both exploit and patch intelligence
-        has_logic = exploit_docs and patch_docs
+        # 5. Package intelligence snippets for the Generator
+        snippets = []
+        for doc in exploit_docs + patch_docs:
+            snippets.append({
+                "content": doc.content,
+                "purpose": doc.metadata.get("purpose", "general"),
+                "context": doc.metadata.get("context", ""),
+                "source": doc.metadata.get("source", "unknown")
+            })
+
+        # 6. Logic Gate: Proceed if we have both exploit and patch intelligence
+        has_logic = len(exploit_docs) > 0 and len(patch_docs) > 0
         
         return {
             "vulnerability_sink": sink,
@@ -139,7 +156,8 @@ class KnowledgeRegistry:
             "logic_delta": delta,
             "exploit_primitive": "VERIFIED_VIA_LOGIC" if has_logic else "PENDING_SCRAPE",
             "patch_analysis": delta.get("fix_strategy", "No patch analysis available."),
-            "flag_hint": delta.get("hardening_delta", "Manual investigation required.")
+            "flag_hint": delta.get("hardening_delta", "Manual investigation required."),
+            "intelligence_snippets": snippets
         }
 
     async def _analyze_security_delta(self, exploit_text: str, patch_text: str) -> Dict[str, Any]:
@@ -211,12 +229,7 @@ class KnowledgeRegistry:
             self.rag.add_document(exploit_text, source="internal", source_type="mock_poc", title="CVE-2024-1234 Exploit")
             self.rag.add_document(patch_text, source="internal", source_type="mock_patch", title="CVE-2024-1234 Patch")
             
-            # Sync first repository if available in RAG defaults
-            if self.rag.DEFAULT_REPOS:
-                logger.info(f"📂 Syncing first core seed: {self.rag.DEFAULT_REPOS[0].name}")
-                self.rag.sync_repo(self.rag.DEFAULT_REPOS[0])
-            
-            logger.info("✅ Auto-bootstrap complete.")
+            logger.info("✅ Auto-bootstrap complete (Minimal).")
 
     def bootstrap_seeds(self, seed_file: str = "KNOWLEDGE_BASE.md") -> List[str]:
         """

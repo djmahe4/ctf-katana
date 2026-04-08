@@ -3,8 +3,8 @@ version: "1.0.0"
 description: |
   Purple Loop Orchestrator (The Conductor)
   
-  Orchestrates the automated CTF challenge generation pipeline by chaining:
-  Research Agent -> Challenge Generator -> Flagger -> CTFd Setup.
+  Orchestrates the intelligence-augmented CTF generation pipeline by chaining:
+  Research (RAG) -> Challenge Generation (Intelligence-Augmented) -> Flagger -> CTFd Setup.
 
 author: Purple Engine Team
 license: MIT

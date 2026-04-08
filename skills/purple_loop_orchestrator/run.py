@@ -110,11 +110,12 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 'id': target,
                 'vuln_type': research_result.get('intent', 'web'),
                 'title': f"Challenge for {target}",
-                'description': research_result.get('patch_analysis', 'Exploit the vulnerability.')
+                'description': pl.get('patch_analysis', 'Exploit the vulnerability.')
             },
             'difficulty': difficulty,
             'ai_hardening': ai_hardening,
-            'logic_delta': pl.get('logic_delta')
+            'logic_delta': pl.get('logic_delta'),
+            'intelligence_snippets': pl.get('intelligence_snippets')
         }
         
         gen_result = run_gen(gen_params)

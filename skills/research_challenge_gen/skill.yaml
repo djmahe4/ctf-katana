@@ -1,10 +1,10 @@
 name: challenge-gen
 version: "1.0.0"
 description: |
-  CTF Challenge Generator
+  Intelligence-Augmented CTF Challenge Generator
   
-  Automatically generates CTF challenges from vulnerability findings,
-  with AI-hardening to prevent trivial automated solving.
+  Automatically generates high-fidelity CTF challenges grounded in real-world 
+  exploit and patch snippets, with AI-hardening to prevent trivial automated solving.
 
 author: Purple Engine Team
 license: MIT
