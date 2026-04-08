@@ -12,6 +12,7 @@ import logging
 import random
 import string
 import hashlib
+import ast
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field, asdict
@@ -41,6 +42,7 @@ class Category(Enum):
     MISC = "misc"
     WEB3 = "web3"
     MOBILE = "mobile"
+    IOT = "iot"
 
 
 class AIHardening(Enum):
@@ -227,6 +229,7 @@ class CTFChallenge:
     hardening: Optional[ChallengeHardening] = None
     source_finding: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    generated_files: List[Dict[str, str]] = field(default_factory=list) # List of {'name': ..., 'content': ...}
 
 
 class ChallengeGenerator:
@@ -356,6 +359,210 @@ class ChallengeGenerator:
         except Exception as e:
             logger.error(f"LLM query error: {e}")
             return ""
+
+    def _flatten_intelligence(self, data: Any) -> str:
+        """Convert intelligence data (string or dict) into a readable string."""
+        if isinstance(data, str):
+            return data
+        if isinstance(data, dict):
+            # Try to find common descriptive fields
+            for key in ['description', 'title', 'summary', 'text']:
+                if key in data and isinstance(data[key], str):
+                    return data[key]
+            # Fallback to key-value pairs
+            return ", ".join(f"{k}: {v}" for k, v in data.items())
+        return str(data)
+
+    def _detect_language(self, snippets: List[Dict[str, Any]], category: str) -> str:
+        """Determines the most appropriate language for the challenge based on snippets or category."""
+        cat_map = {
+            "blockchain": "Solidity/Vyper (Web3)",
+            "web3": "Solidity/Vyper (Web3)",
+            "iot": "C (IoT/Embedded)",
+            "web": "Python (Flask)",
+            "pwn": "C (Binary Exploit)",
+            "reverse": "C (Reverse Engineering)",
+            "mobile": "Java/Kotlin (Android)"
+        }
+        
+        cat = category.lower() if category else "web"
+        
+        # 1. High-confidence detection from snippets first
+        if snippets:
+            content = " ".join([s.get('content', '') for s in snippets]).lower()
+            source = " ".join([s.get('source', '') or "" for s in snippets]).lower()
+            
+            # Check content for clear markers/keywords
+            if ("contract " in content and "pragma solidity" in content) or "vyper" in source or "vyper" in content:
+                return "Solidity/Vyper (Web3)"
+            if "<?php" in content:
+                return "PHP"
+            if "import java.util." in content or "@Override" in content or "activemq" in source or "activemq" in content:
+                return "Java"
+            if "#include <" in content:
+                if any(k in content for k in ["gpio", "i2c", "spi", "serial.begin", "esp_"]):
+                    return "C (IoT/Embedded)"
+                return "C/C++"
+            
+            # Generic Python check - only if it fits the category or we have no category
+            if ("import " in content or "def " in content) and cat in ["web", "unknown"]:
+                return "Python (Flask)"
+
+        # 2. Fallback to category mapping
+        return cat_map.get(cat, "Python (Flask)")
+
+    def _get_extension_for_language(self, lang: str) -> str:
+        """Map a language display name to its standard file extension."""
+        lang_lower = lang.lower()
+        if "solidity" in lang_lower or "vyper" in lang_lower or "web3" in lang_lower:
+            return ".sol"
+        if "c (iot" in lang_lower or "embedded" in lang_lower:
+            return ".c"
+        if "c/c++" in lang_lower or "pwn" in lang_lower:
+            return ".c"
+        if "python" in lang_lower:
+            return ".py"
+        if "java" in lang_lower:
+            return ".java"
+        if "php" in lang_lower:
+            return ".php"
+        if "javascript" in lang_lower or "node" in lang_lower:
+            return ".js"
+        return ".txt"
+
+    def _get_required_build_files(self, category: str) -> List[str]:
+        """Identify required build/manifest files for a given category."""
+        cat_lower = category.lower()
+        if cat_lower == "iot":
+            return ["Makefile"]
+        if cat_lower in ["web3", "blockchain"]:
+            return ["package.json", "hardhat.config.js"]
+        if cat_lower == "web":
+            return ["requirements.txt", "Dockerfile"]
+        return []
+
+    def _generate_source_code(self,
+        category: str,
+        vuln_type: str,
+        snippets: List[Dict[str, Any]],
+        logic_delta: Dict[str, Any] = None,
+        difficulty: Difficulty = Difficulty.MEDIUM
+    ) -> List[Dict[str, str]]:
+        """Synthesize vulnerable source code across multiple domains."""
+        detected_lang = self._detect_language(snippets, category)
+        logger.info(f"Target language detected for synthesis: {detected_lang}")
+
+        # Domain-specific requirement injection
+        domain_requirements = ""
+        required_artifacts = self._get_required_build_files(category)
+        
+        if "IoT" in detected_lang:
+            domain_requirements = f"""
+## IoT-SPECIFIC REQUIREMENTS:
+1. Include a Makefile or PlatformIO.ini for compilation.
+2. Use standard hardware libraries (e.g., Arduino, ESP-IDF) if applicable.
+3. Ensure the vulnerability is relatable to hardware (e.g., buffer overflow in serial buffer).
+"""
+        elif "Web3" in detected_lang:
+            domain_requirements = """
+## WEB3-SPECIFIC REQUIREMENTS:
+1. Generate the Solidity contract (.sol).
+2. Include a package.json and a deployment script (e.g., Hardhat/Truffle script).
+"""
+
+        exploit_snippet = next((s['content'] for s in snippets if s['purpose'] == 'exploit'), "No direct exploit sample found")
+        patch_snippet = next((s['content'] for s in snippets if s['purpose'] == 'patch'), "No patch sample found")
+        
+        prompt = f"""Generate a vulnerable application for a CTF challenge.
+DOMAIN/LANGUAGE: {detected_lang}
+VULNERABILITY: {vuln_type} ({category})
+DIFFICULTY: {difficulty.value}
+
+## GROUNDING INTELLIGENCE
+EXPLOIT PATTERN:
+{exploit_snippet}
+
+PATCH STRATEGY:
+{patch_snippet}
+
+## LOGIC CONTEXT
+{json.dumps(logic_delta, indent=2) if logic_delta else ""}
+
+{domain_requirements}
+
+## REQUIREMENTS
+1. Use {detected_lang} matching the grounding patterns.
+2. The code MUST contain a clear, exploitable vulnerability matching the grounding patterns.
+3. Include comments marking where the vulnerability is.
+4. Leave placeholders for future hardening (e.g. # <HARDENING_SITE_1>).
+5. Ensure the flag is read from an environment variable 'FLAG' or a local file 'flag.txt'.
+
+## OUTPUT FORMAT
+1. Start with a === MANIFEST === section listing all files.
+2. Use EXACTLY this marker for EACH file:
+=== FILE: filename.ext ===
+[Code Content]
+"""
+
+        raw_code = self._query_llm(prompt)
+        
+        # Parse Multi-File Output
+        import re
+        files = []
+        
+        if "=== FILE:" in raw_code:
+            # Split by file marker, allowing for spaces/newlines
+            blocks = re.split(r'===\s*FILE:\s*(\S+)\s*===', raw_code)
+            # blocks[0] might contain the MANIFEST or preamble
+            for i in range(1, len(blocks), 2):
+                filename = blocks[i].strip()
+                content = blocks[i+1].strip()
+                # Clean code blocks
+                if "```" in content:
+                    m = re.search(r'```(?:\w+)?\n(.*?)```', content, re.DOTALL)
+                    if m: content = m.group(1).strip()
+                files.append({"name": filename, "content": content})
+        else:
+            # Fallback for LLMs that ignored format
+            content = raw_code
+            if "```" in content:
+                m = re.search(r'```(?:\w+)?\n(.*?)```', content, re.DOTALL)
+                if m: content = m.group(1).strip()
+            
+            ext = self._get_extension_for_language(detected_lang)
+            files.append({"name": f"vulnerable_app{ext}", "content": content})
+
+        # Inject missing required artifacts
+        existing_filenames = {f["name"] for f in files}
+        for req in required_artifacts:
+            if req not in existing_filenames:
+                logger.warning(f"Required artifact {req} missing from LLM output. Generating fallback...")
+                files.append({
+                    "name": req,
+                    "content": self._generate_fallback_artifact(req, files, detected_lang)
+                })
+
+        # VALIDATION GATE (Polymorphic)
+        for f in files:
+            ext = os.path.splitext(f["name"])[1]
+            if ext == ".py":
+                try:
+                    ast.parse(f["content"])
+                    f["valid"] = True
+                except (SyntaxError, IndentationError):
+                    f["valid"] = False
+            else:
+                # Basic Balanced Braces for non-Python
+                f["valid"] = f["content"].count("{") == f["content"].count("}")
+                logger.debug(f"Applied lightweight validation for {f['name']}")
+            
+        return files
+
+    def _generate_fallback_artifact(self, name: str, existing_files: List[Dict[str, str]], lang: str) -> str:
+        """Use LLM to generate a missing build artifact contextually."""
+        file_list = ", ".join([f["name"] for f in existing_files])
+        prompt = f"Generate only the raw content of a {name} for a {lang} project with these files: {file_list}. No markdown explanation."
+        return self._query_llm(prompt).strip("`").strip()
     
     def generate_from_finding(
         self,
@@ -364,6 +571,7 @@ class ChallengeGenerator:
         ai_hardening: AIHardening = AIHardening.STANDARD,
         logic_delta: Dict[str, Any] = None,
         snippets: List[Dict[str, Any]] = None,
+        category: Category = None,
     ) -> CTFChallenge:
         """
         Generate challenge from a vulnerability finding.
@@ -374,7 +582,10 @@ class ChallengeGenerator:
         
         # Look up template
         template = CHALLENGE_TEMPLATES.get(vuln_type, {})
-        category = template.get('category', Category.WEB)
+        
+        # Priority: explicit arg > template > default
+        if not category:
+            category = template.get('category', Category.WEB)
         
         # Use logic delta to influence generation if available
         hardening_strategy = "STANDARD_HARDENING"
@@ -396,12 +607,15 @@ class ChallengeGenerator:
         
         # Generate description
         desc_templates = template.get('description_templates', [finding.get('description', '')])
-        description = random.choice(desc_templates)
+        description = str(random.choice(desc_templates))
         
         # Enhance description with logic delta and snippets
         if logic_delta:
-            logic_desc = f"\n\nContext: The root cause involves {logic_delta.get('vulnerability_root')}. "
-            logic_desc += f"A common fix strategy is {logic_delta.get('fix_strategy')}, but you need to find a bypass."
+            root_cause = self._flatten_intelligence(logic_delta.get('vulnerability_root', 'Refer to finding'))
+            fix_strat = self._flatten_intelligence(logic_delta.get('fix_strategy', 'Standard patching'))
+            
+            logic_desc = f"\n\nContext: The root cause involves {root_cause}. "
+            logic_desc += f"A common fix strategy is {fix_strat}, but you need to find a bypass."
             description += logic_desc
         
         if snippets:
@@ -469,6 +683,16 @@ The flag is: {flag}
             source_finding=finding.get('id'),
         )
         
+        # 4. Synthesize source code if snippets are available
+        if snippets:
+            challenge.generated_files = self._generate_source_code(
+                category=category.value,
+                vuln_type=vuln_type,
+                snippets=snippets,
+                logic_delta=logic_delta,
+                difficulty=difficulty
+            )
+
         # Apply hardening
         challenge = self._apply_hardening(challenge, ai_hardening)
         
@@ -632,10 +856,19 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     category = None
     if category_str:
+        cat_lower = category_str.lower()
+        # Handle common aliases
+        if cat_lower == "blockchain": 
+            cat_lower = "web3"
+        
         try:
-            category = Category(category_str)
+            category = Category(cat_lower)
         except ValueError:
-            pass
+            # Try to match by name if value match fails
+            for c in Category:
+                if c.name.lower() == cat_lower:
+                    category = c
+                    break
     
     try:
         generator = ChallengeGenerator()
@@ -647,6 +880,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 ai_hardening=ai_hardening,
                 logic_delta=logic_delta,
                 snippets=snippets,
+                category=category
             )
         else:
             challenge = generator.generate_from_template(
@@ -672,6 +906,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 'hardening': asdict(challenge.hardening) if challenge.hardening else None,
                 'source_finding': challenge.source_finding,
                 'created_at': challenge.created_at,
+                'generated_files': challenge.generated_files,
             },
         }
         

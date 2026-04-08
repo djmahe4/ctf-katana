@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 # Add project root to path
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import required skills/utils
@@ -27,9 +27,106 @@ from skills.research_agent.intelligence_miner import IntelligenceMiner
 
 logger = logging.getLogger(__name__)
 
+def _detect_category(target: str, pl: Dict[str, Any], hint: str = None) -> str:
+    """Detection logic to classify the technology stack (Web, IoT, Web3)."""
+    if hint and hint.lower() in ["web", "iot", "blockchain", "pwn"]:
+        logger.info(f"Using provided category hint: {hint}")
+        return hint.lower()
+
+    # Build a massive text blob from all available research metadata
+    text_data = [
+        target,
+        str(pl.get('logic_analysis', '')),
+        str(pl.get('patch_analysis', '')),
+        str(pl.get('summary', '')),
+        " ".join([s.get('content', '') for s in pl.get('intelligence_snippets', [])]),
+        " ".join([s.get('source', '') or "" for s in pl.get('intelligence_snippets', [])]),
+        " ".join(pl.get('keywords', []))
+    ]
+    text_blob = " ".join(text_data).lower()
+    
+    logger.debug(f"Category detection blob length: {len(text_blob)}")
+
+    # Web3 / Blockchain - High Priority
+    blockchain_keywords = ['vyper', 'solidity', 'smart contract', 'blockchain', 'ethereum', 'web3', 'evm', 'on-chain', 'defi', 'dex', 'mint', 'burn']
+    if any(k in text_blob for k in blockchain_keywords):
+        return "blockchain"
+        
+    # IoT / Embedded / Binary
+    iot_keywords = ['iot', 'embedded', 'firmware', 'buffer overflow', 'overflow', 'memory corruption', 'binary', 'openvpn', 'rtos', 'esp32', 'pwn', 'assembly', 'heap exploitation', 'stack smashing', 'arm', 'mips', 'risc-v']
+    if any(k in text_blob for k in iot_keywords):
+        return "iot"
+
+    # Default to Web
+    return "web"
+
 async def async_input(prompt: str) -> str:
     """Non-blocking input wrapper."""
     return await asyncio.get_event_loop().run_in_executor(None, input, prompt)
+
+def _export_challenge(challenge: Dict[str, Any], target_id: str) -> str:
+    """
+    Exports the generated challenge files to disk in an isolated directory.
+    Format: generated_challenges/{timestamp}_{category}_{target_id}/
+    """
+    import shutil
+    from datetime import datetime
+    
+    # 1. Prepare directory name
+    timestamp = datetime.now().strftime("%H%M%S") # Just time since date is often redundant in session
+    category = challenge.get('category', 'misc')
+    vuln_type = challenge.get('vuln_type', 'unknown')
+    
+    # Sanitize category/vuln_type/target_id for safe directory naming
+    safe_target = "".join(c if c.isalnum() or c in "-_" else "_" for c in target_id)
+    safe_vuln = "".join(c if c.isalnum() or c in "-_" else "_" for c in vuln_type.lower())
+    
+    # Directory format: generated_challenges/{category}_{safe_vuln}_{timestamp}_{safe_target}/
+    dir_name = f"{category}_{safe_vuln}_{timestamp}_{safe_target}"
+    export_path = PROJECT_ROOT / "generated_challenges" / dir_name
+    
+    export_path.mkdir(parents=True, exist_ok=True)
+    
+    # 2. Write synthesized source files
+    generated_files = challenge.get('generated_files', [])
+    for gf in generated_files:
+        filename = gf.get('name', 'app.py')
+        # Simple sanitization
+        filename = "".join(c if c.isalnum() or c in "._-" else "_" for c in filename)
+        file_path = export_path / filename
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(gf.get('content', ''))
+            
+    # 2.5 Migrate Browser Snapshots for Auditability
+    # Snapshots are usually captured by ChromeScraper during the mining phase
+    snapshot_dir = PROJECT_ROOT / "snapshots"
+    if snapshot_dir.exists():
+        target_snapshots = export_path / "research_snapshots"
+        target_snapshots.mkdir(exist_ok=True)
+        for snap in snapshot_dir.glob(f"*{target_id}*"):
+            shutil.copy2(snap, target_snapshots / snap.name)
+            logger.info(f"✅ Audited snapshot copied: {snap.name}")
+            
+    # 3. Generate and write manifest.json
+    manifest = {
+        "challenge_id": challenge.get("id"),
+        "name": challenge.get("name"),
+        "category": category,
+        "difficulty": challenge.get("difficulty"),
+        "points": challenge.get("points"),
+        "description": challenge.get("description"),
+        "flag": challenge.get("flag"),
+        "hints": challenge.get("hints"),
+        "solution": challenge.get("solution"),
+        "source_finding": challenge.get("source_finding"),
+        "created_at": challenge.get("created_at"),
+        "files_exported": [f['name'] for f in generated_files]
+    }
+    
+    with open(export_path / "challenge_manifest.json", "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+        
+    return str(export_path)
 
 async def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -41,11 +138,13 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
             - difficulty: medium
             - ai_hardening: standard
             - interactive: bool (Human-In-The-Loop)
+            - category_hint: optional string
     """
     target = params.get('target')
     difficulty = params.get('difficulty', 'medium')
     ai_hardening = params.get('ai_hardening', 'standard')
     interactive = params.get('interactive', False)
+    category_hint = params.get('category_hint')
     
     steps_completed = []
     
@@ -105,17 +204,23 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
         
         # 2. Challenge Scaffolding Phase
         logger.info("🏗️  Scaffolding Challenge via research_challenge_gen...")
+        
+        # Enhanced Category Detection
+        category = _detect_category(target, pl, category_hint)
+        logger.info(f"📊 Detected challenge category: {category}")
+        
         gen_params = {
             'finding': {
                 'id': target,
-                'vuln_type': research_result.get('intent', 'web'),
+                'vuln_type': category,
                 'title': f"Challenge for {target}",
                 'description': pl.get('patch_analysis', 'Exploit the vulnerability.')
             },
             'difficulty': difficulty,
             'ai_hardening': ai_hardening,
             'logic_delta': pl.get('logic_delta'),
-            'intelligence_snippets': pl.get('intelligence_snippets')
+            'intelligence_snippets': pl.get('intelligence_snippets'),
+            'category': category
         }
         
         gen_result = run_gen(gen_params)
@@ -140,6 +245,13 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 return {'status': 'cancelled', 'message': 'User cancelled after scaffolding.', 'steps_completed': steps_completed, 'challenge_id': challenge['id']}
 
         steps_completed.append("Scaffolding Complete")
+        
+        # 2.5 Disk Export Phase (New Integration)
+        logger.info(f"💾 Exporting challenge to disk...")
+        export_path = _export_challenge(challenge, target)
+        challenge['export_path'] = export_path
+        logger.info(f"✅ Export complete: Files saved to {export_path}")
+        steps_completed.append("Disk Export Complete")
         
         # 3. Flagger (Hiding the Flag) Phase
         logger.info("🚩 Hardening Flag via Flagger...")
@@ -171,6 +283,7 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
         return {
             'status': 'success',
             'challenge_id': challenge['id'],
+            'export_path': export_path,
             'steps_completed': steps_completed,
             'message': f"Purple Loop completed for {target}. Challenge generated and ready for deployment."
         }
