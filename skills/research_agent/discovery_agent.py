@@ -7,9 +7,9 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 # Local imports
-from skills.research.knowledge_base import KnowledgeBase
-from skills.research.chrome_scraper.scraper import ChromeScraper
-from skills.research.vuln_discovery.nuclei_manager import NucleiManager
+from context.knowledge_base import KnowledgeBase
+from skills.research_chrome_scraper.scraper import ChromeScraper
+from skills.research_vuln_discovery.nuclei_manager import NucleiManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,8 @@ class DiscoveryAgent:
         Analyzes the 'new' and 'updated' CVEs from delta.json.
         Filters for HIGH/CRITICAL and notifies if Nuclei template exists.
         """
+        # 24h Filter Logic
+        now = datetime.utcnow()
         candidates = []
         new_items = delta_json.get("new", [])
         updated_items = delta_json.get("updated", [])
@@ -51,6 +53,19 @@ class DiscoveryAgent:
             cve_id = item.get("cveId")
             if not cve_id or cve_id in self.scout_state["processed_cves"]:
                 continue
+            
+            # 24h Delta check
+            date_str = item.get("dateUpdated")
+            if date_str:
+                try:
+                    # Handle Z suffix if present
+                    date_clean = date_str.replace('Z', '')
+                    item_date = datetime.fromisoformat(date_clean)
+                    delta = now - item_date
+                    if delta.total_seconds() > 86400: # 24 hours
+                        continue
+                except Exception as e:
+                    logger.warning(f"Failed to parse date for {cve_id}: {date_str} - {e}")
                 
             # Perform quick filtering (Severity Check - if possible from link/delta)
             # Since delta.json might only have links, we might need a "Lazy Fetch" of headers

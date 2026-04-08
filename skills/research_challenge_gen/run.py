@@ -58,83 +58,114 @@ DIFFICULTY_POINTS = {
 }
 
 # Challenge templates by category and type
+# Challenge templates by category and type
 CHALLENGE_TEMPLATES = {
     "sqli": {
+        "cwe_id": "CWE-89",
         "category": Category.WEB,
-        "name_templates": [
-            "Login Bypass",
-            "Database Dungeon",
-            "Query Quest",
-            "Injection Junction",
-        ],
+        "name_templates": ["Login Bypass", "Database Dungeon", "Query Quest", "Injection Junction"],
         "description_templates": [
             "Can you bypass the login page and access the admin panel?",
             "There's a database full of secrets. Can you extract them?",
             "This web application seems vulnerable. Find the flag!",
         ],
         "flag_keywords": ["sql", "inject", "database", "query"],
+        "sink_patterns": ["SELECT * FROM users WHERE username='{input}'", "db.execute(f\"...{user_input}...\")"],
+        "metadata": {"requires_db": True, "source_code_analysis": False}
     },
     "xss": {
+        "cwe_id": "CWE-79",
         "category": Category.WEB,
-        "name_templates": [
-            "Script Kiddie",
-            "Cookie Monster",
-            "XSS Playground",
-            "Browser Betrayal",
-        ],
+        "name_templates": ["Script Kiddie", "Cookie Monster", "XSS Playground", "Browser Betrayal"],
         "description_templates": [
             "Execute JavaScript in the context of another user.",
             "Steal the admin's cookies to get the flag.",
             "This comment section looks interesting...",
         ],
         "flag_keywords": ["xss", "script", "cookie", "alert"],
+        "sink_patterns": ["innerHTML = input", "document.write(input)"],
+        "metadata": {"requires_browser": True, "source_code_analysis": False}
+    },
+    "command_injection": {
+        "cwe_id": "CWE-78",
+        "category": Category.WEB,
+        "name_templates": ["Shell Shocked", "System Surveyor", "Command Central", "Ping Pong"],
+        "description_templates": [
+            "This utility lets you ping servers. Can you do more?",
+            "The system executes commands based on your input. Find a way to read the flag.",
+            "Bypass the restricted shell and read /flag.txt",
+        ],
+        "flag_keywords": ["cmd", "shell", "exec", "rce"],
+        "sink_patterns": ["os.system(f'ping {input}')", "subprocess.call(['ls', input])"],
+        "metadata": {"requires_os": True, "source_code_analysis": True}
+    },
+    "ssrf": {
+        "cwe_id": "CWE-918",
+        "category": Category.WEB,
+        "name_templates": ["Internal Investigator", "Proxy Prank", "Metadata Miner", "Request Router"],
+        "description_templates": [
+            "The application fetches URLs for you. Can you find internal services?",
+            "Access the hidden metadata service to retrieve the cloud credentials.",
+            "Route your requests through the server to bypass the firewall.",
+        ],
+        "flag_keywords": ["ssrf", "internal", "localhost", "proxy"],
+        "sink_patterns": ["requests.get(user_url)", "urllib.request.urlopen(url)"],
+        "metadata": {"requires_network": True, "source_code_analysis": True}
+    },
+    "deserialization": {
+        "cwe_id": "CWE-502",
+        "category": Category.WEB,
+        "name_templates": ["Object Odyssey", "Pickle Power", "Serialized Secrets", "Gadget Gatherer"],
+        "description_templates": [
+            "This application uses serialized objects for session management. Can you exploit it?",
+            "Find a gadget chain to achieve Remote Code Execution.",
+            "The flag is hidden in the object stream.",
+        ],
+        "flag_keywords": ["serialize", "pickle", "gadget", "rce"],
+        "sink_patterns": ["pickle.loads(data)", "yaml.load(input)", "unserialize($data)"],
+        "metadata": {"requires_lib": True, "source_code_analysis": True}
     },
     "reentrancy": {
+        "cwe_id": "CWE-841",
         "category": Category.WEB3,
-        "name_templates": [
-            "Bank Heist",
-            "Recursive Riches",
-            "The DAO Strikes Back",
-            "Withdraw Wisely",
-        ],
+        "name_templates": ["Bank Heist", "Recursive Riches", "The DAO Strikes Back", "Withdraw Wisely"],
         "description_templates": [
             "This smart contract bank has a vulnerability. Can you drain it?",
             "Find the reentrancy bug and claim the reward.",
             "The withdraw function looks suspicious...",
         ],
         "flag_keywords": ["reentr", "withdraw", "callback", "drain"],
+        "sink_patterns": ["(bool success, ) = msg.sender.call{value: amount}(\"\")", "balances[msg.sender] -= amount"],
+        "metadata": {"requires_evm": True, "source_code_analysis": True}
     },
     "buffer_overflow": {
+        "cwe_id": "CWE-121",
         "category": Category.PWN,
-        "name_templates": [
-            "Stack Smash",
-            "Buffer Bonanza",
-            "Memory Mayhem",
-            "Overflow Odyssey",
-        ],
+        "name_templates": ["Stack Smash", "Buffer Bonanza", "Memory Mayhem", "Overflow Odyssey"],
         "description_templates": [
             "This binary has a buffer overflow. Can you get a shell?",
             "Smash the stack and read the flag file.",
             "The function doesn't check input length...",
         ],
         "flag_keywords": ["overflow", "stack", "smash", "pwn"],
+        "sink_patterns": ["strcpy(dest, src)", "gets(buffer)", "scanf(\"%s\", buffer)"],
+        "metadata": {"requires_arch": "x86/x64", "source_code_analysis": True}
     },
-    "crypto_weak": {
-        "category": Category.CRYPTO,
-        "name_templates": [
-            "Weak Cipher",
-            "Crypto Catastrophe",
-            "Broken Encryption",
-            "Key Confusion",
-        ],
+    "idor": {
+        "cwe_id": "CWE-639",
+        "category": Category.WEB,
+        "name_templates": ["User Leaker", "Permission Prank", "Numeric Navigator", "Account Access"],
         "description_templates": [
-            "This encryption scheme has a weakness. Can you break it?",
-            "Find the flaw in the cryptographic implementation.",
-            "The random number generator isn't so random...",
+            "Can you access files that don't belong to you?",
+            "Manipulate the user ID to see private information.",
+            "The application relies on sequential IDs. Find the admin record.",
         ],
-        "flag_keywords": ["crypto", "cipher", "decrypt", "key"],
+        "flag_keywords": ["idor", "access", "permit", "direct"],
+        "sink_patterns": ["db.get_user(request.params['id'])", "open(f'/data/users/{id}.txt')"],
+        "metadata": {"requires_auth": True, "source_code_analysis": False}
     },
 }
+
 
 # AI hardening techniques
 AI_HARDENING_TECHNIQUES = {
@@ -331,6 +362,7 @@ class ChallengeGenerator:
         finding: Dict[str, Any],
         difficulty: Difficulty = Difficulty.MEDIUM,
         ai_hardening: AIHardening = AIHardening.STANDARD,
+        logic_delta: Dict[str, Any] = None,
     ) -> CTFChallenge:
         """Generate challenge from a vulnerability finding."""
         vuln_type = finding.get('vuln_type', 'unknown')
@@ -339,6 +371,14 @@ class ChallengeGenerator:
         # Look up template
         template = CHALLENGE_TEMPLATES.get(vuln_type, {})
         category = template.get('category', Category.WEB)
+        
+        # Use logic delta to influence generation if available
+        hardening_strategy = "STANDARD_HARDENING"
+        if logic_delta:
+            hardening_strategy = logic_delta.get("hardening_delta", hardening_strategy)
+            # Potentially override vuln_type if logic analysis is more precise
+            if logic_delta.get("vulnerability_root") and logic_delta.get("vulnerability_root") != "UNKNOWN":
+                logger.info(f"Using vulnerability root from logic analysis: {logic_delta['vulnerability_root']}")
         
         # Generate name
         name_templates = template.get('name_templates', [title])
@@ -354,18 +394,28 @@ class ChallengeGenerator:
         desc_templates = template.get('description_templates', [finding.get('description', '')])
         description = random.choice(desc_templates)
         
+        # Enhance description with logic delta
+        if logic_delta:
+            logic_desc = f"\n\nContext: The root cause involves {logic_delta.get('vulnerability_root')}. "
+            logic_desc += f"A common fix strategy is {logic_delta.get('fix_strategy')}, but you need to find a bypass."
+            description += logic_desc
+            
         # Generate flag
         keywords = template.get('flag_keywords', ['flag', 'ctf'])
         flag = self._generate_flag(keywords, ai_hardening)
         
         # Generate hints
         hints = self._generate_hints(vuln_type, difficulty)
-        
+
         # Create solution
         solution = ChallengeSolution(
             walkthrough=f"""## Solution for {name}
 
 This challenge demonstrates a {vuln_type} vulnerability.
+
+### logic Analysis Summary
+- **Root Cause**: {logic_delta.get('vulnerability_root') if logic_delta else 'Refer to finding'}
+- **Hardening Strategy**: {logic_delta.get('hardening_delta') if logic_delta else 'Standard templates'}
 
 ### Step 1: Reconnaissance
 Identify the vulnerable endpoint/function.
@@ -488,6 +538,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     difficulty_str = params.get('difficulty', 'medium')
     category_str = params.get('category')
     ai_hardening_str = params.get('ai_hardening', 'standard')
+    logic_delta = params.get('logic_delta')
     
     if not finding and not vuln_type:
         return {
@@ -520,6 +571,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 finding=finding,
                 difficulty=difficulty,
                 ai_hardening=ai_hardening,
+                logic_delta=logic_delta,
             )
         else:
             challenge = generator.generate_from_template(

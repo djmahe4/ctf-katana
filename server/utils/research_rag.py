@@ -83,6 +83,7 @@ class SearchResult:
     title: str
     url: str
     tags: List[str]
+    metadata: Dict[str, Any]
     score: float  # Distance (lower = more similar for ChromaDB)
     relevance: float  # Converted to 0-1 relevance score
 
@@ -309,7 +310,7 @@ class ResearchRAG:
         self,
         persist_directory: Path = None,
         collection_name: str = "purple_engine_kb",
-        embedding_provider: str = "local",  # 'local' or 'ollama'
+        embedding_provider: str = "ollama",  # 'local' or 'ollama'
         embedding_model: str = None,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
@@ -451,6 +452,7 @@ class ResearchRAG:
         source_type: Optional[str] = None,
         tags: Optional[List[str]] = None,
         min_relevance: float = 0.0,
+        preferred_source_type: Optional[str] = None,
     ) -> List[SearchResult]:
         """
         Semantic search over the research RAG.
@@ -465,7 +467,7 @@ class ResearchRAG:
         # Query ChromaDB
         results = self._collection.query(
             query_texts=[query],
-            n_results=limit * 2,  # Get more, then filter
+            n_results=limit * 3,  # Get more, then filter and boost
             where=where if where else None,
             include=["documents", "metadatas", "distances"],
         )
@@ -479,10 +481,16 @@ class ResearchRAG:
                 # Convert cosine distance to relevance (1 - distance for cosine)
                 relevance = 1 - distance
                 
+                metadata = results['metadatas'][0][i]
+                doc_type = metadata.get('source_type', '')
+                
+                # Apply boost for preferred source type
+                if preferred_source_type and doc_type == preferred_source_type:
+                    relevance += 0.2  # 20% boost
+                
                 if relevance < min_relevance:
                     continue
                 
-                metadata = results['metadatas'][0][i]
                 doc_tags = json.loads(metadata.get('tags', '[]'))
                 
                 # Filter by tags if specified
@@ -493,12 +501,13 @@ class ResearchRAG:
                     document_id=metadata.get('document_id', ''),
                     content=results['documents'][0][i],
                     source=metadata.get('source', ''),
-                    source_type=metadata.get('source_type', ''),
+                    source_type=doc_type,
                     title=metadata.get('title', ''),
                     url=metadata.get('url', ''),
                     tags=doc_tags,
+                    metadata=metadata,
                     score=distance,
-                    relevance=round(relevance, 4),
+                    relevance=round(min(relevance, 1.0), 4),
                 ))
         
         # Sort by relevance and limit

@@ -23,6 +23,7 @@ from server.utils.knowledge_registry import KnowledgeRegistry
 from skills.research_challenge_gen.run import run as run_gen
 from skills.flagger.run import run as run_flagger
 from skills.ctfd_setup.run import run as run_setup
+from skills.research_agent.intelligence_miner import IntelligenceMiner
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +58,34 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
         research_result = await registry.query(target)
         
         if not research_result.get('purple_loop', {}).get('has_fix'):
-            logger.warning(f"❌ No verified fix found for {target}.")
-            return {
-                'status': 'error',
-                'message': f"No verified fix found for {target}. Cannot automate Purple Loop.",
-                'steps_completed': steps_completed
-            }
+            if target.startswith("CVE-"):
+                logger.info(f"⚡ Cache Miss! Triggering IntelligenceMiner for {target}...")
+                
+                # We need the githubLink for extraction. 
+                # For now, we construct it based on the CVE-ID patterns used by CVEProject.
+                # Format: https://github.com/CVEProject/cvelistV5/blob/main/cves/2024/1xxx/CVE-2024-1234.json
+                # Actually, the Miner's fetch_raw_json handles github links.
+                year = target.split("-")[1]
+                id_num = target.split("-")[2]
+                folder = id_num[:-3] + "xxx" if len(id_num) > 3 else "0xxx"
+                gh_link = f"https://github.com/CVEProject/cvelistV5/blob/main/cves/{year}/{folder}/{target}.json"
+                
+                miner = IntelligenceMiner(rag=registry.rag, workspace_root=str(PROJECT_ROOT))
+                mine_result = await miner.mine_cve(target, gh_link)
+                
+                if mine_result.get("status") == "success":
+                    logger.info("✅ Mining complete. Re-querying registry...")
+                    research_result = await registry.query(target)
+                else:
+                    logger.warning(f"❌ Mining failed: {mine_result.get('message')}")
+            
+            if not research_result.get('purple_loop', {}).get('has_fix'):
+                logger.warning(f"❌ No verified fix found for {target} even after mining.")
+                return {
+                    'status': 'error',
+                    'message': f"Insufficient intelligence found for {target}. Cannot automate Purple Loop.",
+                    'steps_completed': steps_completed
+                }
         
         pl = research_result['purple_loop']
         logger.info(f"✅ Research success: Found fix at {pl.get('fix_file')}:{pl.get('fix_line')}")
@@ -90,7 +113,8 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 'description': research_result.get('patch_analysis', 'Exploit the vulnerability.')
             },
             'difficulty': difficulty,
-            'ai_hardening': ai_hardening
+            'ai_hardening': ai_hardening,
+            'logic_delta': pl.get('logic_delta')
         }
         
         gen_result = run_gen(gen_params)
@@ -118,13 +142,30 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
         
         # 3. Flagger (Hiding the Flag) Phase
         logger.info("🚩 Hardening Flag via Flagger...")
-        # TODO: Implement deeper Flagger integration here in interactive mode even if interactive is False.
-        steps_completed.append("Flag Hardening Complete (Simulated)")
-        
+        flagger_params = {
+            'flag': challenge.get('flag', 'flag{fake_flag}'),
+            'level': 'moderate',
+            'handler': 'web' if challenge.get('category') == 'web' else 'reverse',
+            'template': 'python'
+        }
+        flagger_result = run_flagger(flagger_params)
+        if flagger_result.get('status') == 'success':
+            steps_completed.append("Flag Hardening Complete")
+            challenge['hardened_flag_payload'] = flagger_result.get('payload')
+        else:
+            logger.warning(f"⚠️ Flagger failed: {flagger_result.get('message')}. Proceeding with raw flag.")
+
         # 4. Deployment Phase
-        logger.info("🚀 Deploying to CTFd via ctfd_setup...")
-        # Placeholder for final deployment logic.
-        # TODO: Implement actual deployment logic here in interactive mode even if interactive is False.
+        logger.info("🚀 Preparing CTFd Deployment...")
+        setup_params = {
+            'challenge': challenge,
+            'dry_run': True # Use dry_run for now since we don't have CTFd creds in env
+        }
+        setup_result = run_setup(setup_params)
+        if setup_result.get('status') == 'success':
+            steps_completed.append("CTFd Setup Prepared")
+        else:
+            logger.warning(f"⚠️ CTFd Setup failed: {setup_result.get('message')}")
         
         return {
             'status': 'success',

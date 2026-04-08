@@ -3,6 +3,8 @@ import re
 import logging
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+import ollama
+import json
 
 # Tier 1 (Lite)
 from context.local_context import LocalKnowledge
@@ -112,26 +114,71 @@ class KnowledgeRegistry:
         exploit_docs = self.rag.search(f"{query} exploit POC", limit=3)
         patch_docs = self.rag.search(f"{query} fix patch", limit=3)
         
-        # 2. Extract Vulnerable Sink (Logic: Compare Patch to finding Flag)
-        sink = "UNKNOWN"
-        if patch_docs:
-            # Iterating over SearchResult list
-            doc_texts = [res.content for res in patch_docs]
-            full_text = " ".join(doc_texts)
+        # 2. Extract Data for Analysis
+        exploit_text = "\n---\n".join([res.content for res in exploit_docs]) if exploit_docs else "No exploit POC found."
+        patch_text = "\n---\n".join([res.content for res in patch_docs]) if patch_docs else "No fix patch found."
+        
+        # 3. Deep Logic Analysis
+        delta = await self._analyze_security_delta(exploit_text, patch_text)
+        
+        # 4. Extract Vulnerable Sink (Fallback to regex if LLM fails or simple)
+        sink = delta.get("vulnerability_root", "UNKNOWN")
+        if sink == "UNKNOWN" and patch_docs:
+            full_text = " ".join([res.content for res in patch_docs])
             paths = re.findall(r'([a-zA-Z0-9_\-/]+\.(?:py|js|c|php|go))', full_text)
             if paths:
                 sink = paths[0]
         
-        # 3. Decision Gate: "if exists only then proceed" to catch the flag
-        proceed = len(patch_docs) > 0
+        # 5. Logic Gate: Proceed if we have both exploit and patch intelligence
+        has_logic = exploit_docs and patch_docs
         
         return {
             "vulnerability_sink": sink,
-            "has_fix": proceed,
-            "exploit_primitive": "PENDING_SCRAPE" if proceed else "NO_VERIFIED_FIX_PATH",
-            "patch_analysis": "Identified potential sink in: " + sink if proceed else "No patch found to verify sink.",
-            "flag_hint": f"Flag likely hidden in {sink} context." if proceed else "Manual investigation required."
+            "has_fix": len(patch_docs) > 0,
+            "has_full_intelligence": has_logic,
+            "logic_delta": delta,
+            "exploit_primitive": "VERIFIED_VIA_LOGIC" if has_logic else "PENDING_SCRAPE",
+            "patch_analysis": delta.get("fix_strategy", "No patch analysis available."),
+            "flag_hint": delta.get("hardening_delta", "Manual investigation required.")
         }
+
+    async def _analyze_security_delta(self, exploit_text: str, patch_text: str) -> Dict[str, Any]:
+        """
+        Calls Ollama to compare exploit and patch for deep logic differences.
+        """
+        model = os.environ.get("KATANA_OLLAMA_MODEL", "mistral-nemo")
+        host = os.environ.get("KATANA_OLLAMA_HOST", "http://localhost:11434")
+        
+        system_prompt = (
+            "You are a Senior Security Researcher. Compare the provided Exploit PoC and Security Patch.\n"
+            "Identify:\n"
+            "1. 'vulnerability_root': The exact code location or logic flaw.\n"
+            "2. 'fix_strategy': How the developer mitigated the issue.\n"
+            "3. 'hardening_delta': A way to reimplement this vulnerability that bypasses a simple fix, "
+            "suitable for a hardened CTF challenge.\n\n"
+            "Respond ONLY with a JSON object."
+        )
+        
+        user_prompt = f"EXPLOIT POC:\n{exploit_text}\n\nSECURITY PATCH:\n{patch_text}"
+        
+        try:
+            client = ollama.AsyncClient(host=host)
+            response = await client.chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                format="json"
+            )
+            return json.loads(response["message"]["content"])
+        except Exception as e:
+            logger.error(f"Security Delta analysis failed: {e}")
+            return {
+                "vulnerability_root": "UNKNOWN",
+                "fix_strategy": "Analysis failed.",
+                "hardening_delta": "Manual investigation required."
+            }
 
     def get_stats(self) -> Dict[str, Any]:
         """Returns indexing statistics for the registry tiers."""

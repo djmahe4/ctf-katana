@@ -129,7 +129,7 @@ class ResearchAgent:
         self.recommender = VulnerabilityRecommender(agent_context=self)
         
         # Phase 3: Discovery Agent integration
-        from skills.research.agent.discovery_agent import DiscoveryAgent
+        from skills.research_agent.discovery_agent import DiscoveryAgent
         self.discovery_agent = DiscoveryAgent(str(self.workspace_root))
         
         logger.info(f"ResearchAgent initialized with model: {self.ollama_model}")
