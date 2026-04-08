@@ -43,6 +43,11 @@ inputs:
     required: false
     default: standard
     enum: [none, standard, aggressive]
+  
+  draft:
+    type: object
+    required: false
+    description: Pre-generated challenge draft from agentic reasoning
 
 outputs:
   status:

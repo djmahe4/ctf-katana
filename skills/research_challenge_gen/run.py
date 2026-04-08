@@ -460,9 +460,15 @@ class ChallengeGenerator:
         vuln_type: str,
         snippets: List[Dict[str, Any]],
         logic_delta: Dict[str, Any] = None,
-        difficulty: Difficulty = Difficulty.MEDIUM
+        difficulty: Difficulty = Difficulty.MEDIUM,
+        draft: Dict[str, Any] = None
     ) -> List[Dict[str, str]]:
         """Synthesize vulnerable source code across multiple domains."""
+        # NEW: Check if we have a pre-generated draft from Agentic Dispatcher
+        if draft and "files" in draft:
+            logger.info("♻️ Using pre-generated Agentic Draft for source code synthesis.")
+            return draft["files"]
+
         detected_lang = self._detect_language(snippets, category)
         logger.info(f"Target language detected for synthesis: {detected_lang}")
 
@@ -623,6 +629,7 @@ PATCH STRATEGY:
         logic_delta: Dict[str, Any] = None,
         snippets: List[Dict[str, Any]] = None,
         category: Category = None,
+        draft: Dict[str, Any] = None,
     ) -> CTFChallenge:
         """
         Generate challenge from a vulnerability finding.
@@ -646,7 +653,8 @@ PATCH STRATEGY:
             if logic_delta.get("vulnerability_root") and logic_delta.get("vulnerability_root") != "UNKNOWN":
                 logger.info(f"Using vulnerability root from logic analysis: {logic_delta['vulnerability_root']}")
         
-        # Generate name
+        # 3. Generate challenge metadata (name, desc, hints, flag)
+        # Use LLM for creative descriptions if needed, but ground in finding
         name_templates = template.get('name_templates', [title])
         name = random.choice(name_templates)
         
@@ -734,14 +742,15 @@ The flag is: {flag}
             source_finding=finding.get('id'),
         )
         
-        # 4. Synthesize source code if snippets are available
-        if snippets:
+        # 4. Synthesize source code if snippets or draft are available
+        if snippets or draft:
             challenge.generated_files = self._generate_source_code(
                 category=category.value,
                 vuln_type=vuln_type,
-                snippets=snippets,
+                snippets=snippets or [],
                 logic_delta=logic_delta,
-                difficulty=difficulty
+                difficulty=difficulty,
+                draft=draft
             )
 
         # Apply hardening
@@ -781,7 +790,8 @@ The flag is: {flag}
             difficulty=difficulty,
             ai_hardening=ai_hardening,
             logic_delta=purple_loop.get("logic_delta"),
-            snippets=purple_loop.get("intelligence_snippets")
+            snippets=purple_loop.get("intelligence_snippets"),
+            draft=purple_loop.get("agentic_draft")
         )
 
     def _map_root_to_vuln_type(self, root: str) -> str:
@@ -888,11 +898,12 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     ai_hardening_str = params.get('ai_hardening', 'standard')
     logic_delta = params.get('logic_delta')
     snippets = params.get('intelligence_snippets')
+    draft = params.get('draft')
     
-    if not finding and not vuln_type:
+    if not finding and not vuln_type and not draft:
         return {
             'status': 'error',
-            'message': 'Either finding or vuln_type parameter required',
+            'message': 'Either finding, vuln_type, or draft parameter required',
         }
     
     try:
@@ -924,14 +935,25 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         generator = ChallengeGenerator()
         
-        if finding:
+        # Handle finding-based generation (with optional draft)
+        if finding or draft:
+            # If finding is missing but we have a draft, we can reconstruct a minimal finding
+            if not finding and draft:
+                finding = {
+                    "id": "agentic-draft",
+                    "title": draft.get("title", "Agentic Challenge"),
+                    "vuln_type": vuln_type or "generic",
+                    "description": "Generated from agentic research."
+                }
+
             challenge = generator.generate_from_finding(
                 finding=finding,
                 difficulty=difficulty,
                 ai_hardening=ai_hardening,
                 logic_delta=logic_delta,
                 snippets=snippets,
-                category=category
+                category=category,
+                draft=draft
             )
         else:
             challenge = generator.generate_from_template(
