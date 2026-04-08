@@ -9,6 +9,8 @@ import os
 import sys
 import json
 import logging
+import re
+import ast
 import random
 import string
 import hashlib
@@ -506,29 +508,34 @@ PATCH STRATEGY:
 
         raw_code = self._query_llm(prompt)
         
+        # LOG RAW CODE FOR DEBUGGING
+        log_dir = os.path.join("logs", "synthesis")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f"raw_{difficulty.value}_{category}_{vuln_type}.txt")
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write(raw_code)
+        
         # Parse Multi-File Output
-        import re
         files = []
         
         if "=== FILE:" in raw_code:
-            # Split by file marker, allowing for spaces/newlines
-            blocks = re.split(r'===\s*FILE:\s*(\S+)\s*===', raw_code)
-            # blocks[0] might contain the MANIFEST or preamble
-            for i in range(1, len(blocks), 2):
-                filename = blocks[i].strip()
-                content = blocks[i+1].strip()
-                # Clean code blocks
-                if "```" in content:
-                    m = re.search(r'```(?:\w+)?\n(.*?)```', content, re.DOTALL)
-                    if m: content = m.group(1).strip()
+            # Strip anything before the first FILE marker (like MANIFEST)
+            parts = re.split(r'(===\s*FILE:\s*\S+\s*===)', raw_code)
+            # parts[0] is everything before first marker
+            # parts[1] is first marker, parts[2] is content, etc.
+            for i in range(1, len(parts), 2):
+                marker = parts[i]
+                content = parts[i+1].strip() if i+1 < len(parts) else ""
+                
+                # Extract filename from marker
+                name_match = re.search(r'===\s*FILE:\s*(\S+)\s*===', marker)
+                filename = name_match.group(1).strip() if name_match else "unknown_file"
+                
+                content = self._clean_code_content(content)
                 files.append({"name": filename, "content": content})
         else:
             # Fallback for LLMs that ignored format
-            content = raw_code
-            if "```" in content:
-                m = re.search(r'```(?:\w+)?\n(.*?)```', content, re.DOTALL)
-                if m: content = m.group(1).strip()
-            
+            content = self._clean_code_content(raw_code)
             ext = self._get_extension_for_language(detected_lang)
             files.append({"name": f"vulnerable_app{ext}", "content": content})
 
@@ -557,6 +564,43 @@ PATCH STRATEGY:
                 logger.debug(f"Applied lightweight validation for {f['name']}")
             
         return files
+
+    def _clean_code_content(self, content: str) -> str:
+        """Robustly strip markdown code blocks and leaked language tags."""
+        content = content.strip()
+        
+        # 1. Try standard triple backtick blocks (with optional newline after tag)
+        pattern = r'```(?:\w+)?\s*\n?(.*?)(?:\n```|```|$)'
+        match = re.search(pattern, content, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+            
+        # 2. Fallback: manual stripping if backticks remain
+        if "```" in content:
+            lines = content.split('\n')
+            clean_lines = []
+            skip_words = {'javascript', 'json', 'python', 'sql', 'solidity', 
+                         'c', 'cpp', 'vyper', 'bash', 'sh', 'java', 'go', 'rust'}
+            
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith('```'):
+                    # Check if standard tag is on same line: ```javascript
+                    remaining = stripped[3:].strip().lower()
+                    if remaining in skip_words:
+                        continue
+                    if remaining: # Keep it if it's not a known skip word
+                        clean_lines.append(stripped[3:])
+                else:
+                    # Check for leaked single-word tags at the very start
+                    if not clean_lines and stripped.lower() in skip_words:
+                        continue
+                    clean_lines.append(line)
+            
+            cleaned = "\n".join(clean_lines).strip()
+            return cleaned.replace('```', '').strip()
+            
+        return content
 
     def _generate_fallback_artifact(self, name: str, existing_files: List[Dict[str, str]], lang: str) -> str:
         """Use LLM to generate a missing build artifact contextually."""
