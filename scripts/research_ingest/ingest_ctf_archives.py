@@ -11,6 +11,12 @@ import backoff
 from bs4 import BeautifulSoup
 from DrissionPage import ChromiumPage, ChromiumOptions
 from typing import List, Dict, Any, Optional
+try:
+    from .advanced_yt_scraper import AdvancedYTScraper
+except ImportError:
+    import sys
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from advanced_yt_scraper import AdvancedYTScraper
 
 # Setup Logging
 logging.basicConfig(
@@ -161,7 +167,7 @@ class HybridCTFScraper:
         try:
             # specialized YouTube Handling
             if "youtube.com" in url or "youtu.be" in url:
-                return self.scrape_youtube_transcript(page, url)
+                return self.scrape_youtube_ocr(url)
 
             page.get(url)
             time.sleep(1) # Let JS settle
@@ -200,6 +206,46 @@ class HybridCTFScraper:
         except Exception as e:
             logger.error(f"Failed deep-scrape {url}: {e}")
             return None
+
+    def scrape_youtube_ocr(self, url: str) -> Optional[Dict]:
+        """
+        Scrape YouTube using high-fidelity OCR logic from AdvancedYTScraper.
+        """
+        logger.info(f"Using Advanced OCR Scraper for: {url}")
+        scraper = None
+        try:
+            # Initialize the advanced scraper
+            scraper = AdvancedYTScraper()
+            # Run the scraper (it handles its own duration detection and browser)
+            ocr_results = scraper.run(url)
+            
+            if not ocr_results:
+                logger.warning(f"OCR scraper returned no results for {url}. Falling back to transcript.")
+                # We still need a 'page' for the old transcript logic, 
+                # but HybridCTFScraper already has one if called from scrape_writeup_content via self.browser
+                # However, AdvancedYTScraper just finished, let's try transcript fallback if needed.
+                return None # The caller will handle fallback if they want
+                
+            # Consolidate text for "content" field
+            consolidated_text = "\n\n".join([
+                f"[{res['timestamp']}] {'(Terminal)' if res.get('is_terminal') else '(GUI)'}\n{res['ocr_text']}"
+                for res in ocr_results
+            ])
+            
+            return {
+                "url": url,
+                "title": f"YouTube OCR: {url}", # Title might be fetched by AdvancedYTScraper later
+                "content": consolidated_text,
+                "ocr_data": ocr_results,
+                "type": "youtube_ocr",
+                "extracted_method": "AdvancedYTScraper"
+            }
+        except Exception as e:
+            logger.error(f"Advanced OCR Scraper failed: {e}")
+            return None
+        finally:
+            if scraper:
+                scraper.cleanup()
 
     def scrape_youtube_transcript(self, page, url: str) -> Optional[Dict]:
         """

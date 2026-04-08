@@ -33,6 +33,7 @@ class AdvancedYTScraper:
         self.last_text_len = 0
         self.last_capture_time = 0
         self.is_terminal_mode = False
+        self.video_metadata = {}
         
         # Optional: Set tesseract path if found in common Windows locations
         tess_paths = [
@@ -64,53 +65,42 @@ class AdvancedYTScraper:
         Returns: (video_element, is_ad, is_visible)
         """
         try:
-            # 1. Locate the player and video using DrissionPage's built-in Shadow DOM handling
-            # ytd-player is the main container; the video is deep inside it.
-            # DrissionPage's .ele() with 'video.html5-main-video' often works but might need sr()
             video = self.page.ele('.html5-main-video', timeout=2)
-            
             if not video:
-                # Fallback: search within ytd-player's shadow root
-                player_container = self.page.ele('ytd-player', timeout=1)
-                if player_container:
-                    video = player_container.sr('t:video') or player_container.sr('.html5-main-video')
-
-            if not video:
-                # Final fallback for unusual layouts (e.g., shorts or embedded)
                 video = self.page.ele('t:video', timeout=1)
 
             if not video:
                 return None, False, False
 
-            # 2. Aggressive Ad Detection (JS for maximum reach)
+            # Aggressive but Accurate Ad Detection
+            # We look for visible ad-specific labels or UI elements
             js_ad_check = """
             try {
                 const player = document.querySelector('ytd-player') || document.querySelector('#movie_player');
                 if (!player) return false;
                 
-                // 1. Official State Indicators (High Confidence)
-                const isAdClass = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+                // 1. Skip Buttons (Indisputable)
+                const hasSkipBtn = !!player.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container');
                 
-                // 2. Clear Ad Components (High Confidence)
+                // 2. Ad Module Overlays (Visible children)
                 const adModule = player.querySelector('.ytp-ad-module');
-                const hasAdModule = adModule && adModule.children.length > 0;
+                const hasVisibleAdOverlay = adModule && adModule.offsetHeight > 0 && adModule.children.length > 0;
                 
-                // 3. Skip Buttons (Indisputable)
-                const hasSkipBtn = !!player.querySelector('.ytp-ad-skip-button') || 
-                                 !!player.querySelector('.ytp-ad-skip-button-modern') ||
-                                 !!player.querySelector('.ytp-ad-skip-button-container');
+                // 3. Ad Badges / Labels
+                const adBadge = player.querySelector('.ytp-ad-simple-ad-badge, .ytp-ad-text, .ytp-ad-preview-text');
+                const hasAdLabel = adBadge && adBadge.innerText.length > 0 && adBadge.offsetHeight > 0;
                 
-                return isAdClass || hasAdModule || hasSkipBtn;
+                // 4. Class check as fallback, but only if an ad label is also present
+                const isAdClass = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+
+                return hasSkipBtn || hasVisibleAdOverlay || (isAdClass && hasAdLabel);
             } catch(e) { return false; }
             """
             is_ad = self.page.run_js(js_ad_check)
 
-            # 3. Visibility Check
-            # Use DrissionPage's native rect and states properties
             is_visible = False
             try:
-                rect = video.rect.size
-                is_visible = rect[0] > 0 and rect[1] > 0 and video.states.is_displayed
+                is_visible = video.states.is_displayed and video.rect.size[0] > 0
             except:
                 pass
 
@@ -161,6 +151,40 @@ class AdvancedYTScraper:
         return false;
         """
         self.page.run_js(js_chrome)
+
+    def get_video_duration(self):
+        """Returns the total duration of the video in seconds, ensuring we get the main content duration."""
+        for _ in range(15): # Wait up to 7.5 seconds
+            duration = self.page.run_js("""
+                try {
+                    const player = document.getElementById('movie_player') || document.querySelector('ytd-player');
+                    if (player && typeof player.getDuration === 'function') {
+                        // The YouTube Player API's getDuration() consistently returns the main video's length 
+                        // even if an ad is currently playing on top.
+                        return player.getDuration();
+                    }
+                    const v = document.querySelector('video.html5-main-video');
+                    return v ? v.duration : 0;
+                } catch(e) { return 0; }
+            """)
+            if duration and duration > 3.0: # Ignore tiny durations (placeholders)
+                return float(duration)
+            
+            # Check for error pages or availability
+            if self.page.ele('text:Video unavailable'):
+                self.logger.error("[!] Video is unavailable (Private/Deleted/Geo-blocked)")
+                return 0.0
+
+            time.sleep(0.5)
+        return 0.0
+
+    def cleanup(self, keep_txt=True):
+        """Removes all files in the output directory."""
+        self.logger.info(f"[*] Cleaning up output directory: {self.output_dir}")
+        for f in os.listdir(self.output_dir):
+            if keep_txt and f.endswith(".txt"):
+                continue
+            os.remove(os.path.join(self.output_dir, f))
 
     def _preprocess_for_ocr(self, image_path):
         """Optimizes images for Tesseract OCR: Resize + Grayscale + Adaptive Threshold."""
@@ -282,7 +306,7 @@ class AdvancedYTScraper:
             self.logger.warning(f"[!] OCR Error: {e}")
             return ""
 
-    def _is_terminal(self, frame_path):
+    def is_terminal_window(self, frame_path):
         """Heuristic to detect if frame is likely a terminal."""
         try:
             img = cv2.imread(frame_path)
@@ -295,17 +319,46 @@ class AdvancedYTScraper:
         except:
             return False
 
-    def run(self, url, max_duration=60):
-        """Main scraping loop."""
+    def is_ad_content(self, frame, text: str) -> bool:
+        """Heuristic to detect YouTube ads based on keywords and frame characteristics."""
+        text_lower = text.lower()
+        ad_keywords = ["skip ad", "advertisement", "sponsored", "visit site", "video will play after ad"]
+        
+        # Keyword match
+        if any(kw in text_lower for kw in ad_keywords):
+            return True
+            
+        # Common ad layout: Very short text in a GUI window often indicates a transition or ad overlay
+        if not self.is_terminal_window(frame) and len(text.strip()) < 15:
+            # This is a bit aggressive, but helps skip banners
+            # Avoid skipping if it's a very clear UI change
+            pass
+            
+        return False
+
+    def run(self, url, max_duration=None):
+        """Main scraping loop. Returns structured OCR results."""
         self.logger.info(f"[*] Starting scrape: {url}")
         self.page.get(url)
+        
+        # Wait for video to be ready and metadata to load
+        self.page.wait.ele_displayed('.html5-main-video', timeout=10)
+        time.sleep(2) # Extra buffer for JS to update duration
         
         # Initial Quality Set
         self.force_high_quality()
         
+        # Determine actual duration to scrape
+        video_duration = self.get_video_duration()
+        if max_duration is None or max_duration > video_duration:
+            max_duration = video_duration
+        
+        self.logger.info(f"[*] Scraping for {max_duration:.1f}s (Video Total: {video_duration:.1f}s)")
+        
         start_time = time.time()
         frames_saved = 0
         is_ui_hidden = False
+        results = []
         
         while time.time() - start_time < max_duration:
             try:
@@ -319,7 +372,6 @@ class AdvancedYTScraper:
 
                 # 2. Ad Management
                 if is_ad:
-                    # Restore UI to see what we're skipping
                     if is_ui_hidden:
                         self.toggle_chrome(True)
                         is_ui_hidden = False
@@ -328,42 +380,43 @@ class AdvancedYTScraper:
                     time.sleep(0.5)
                     continue
                 else:
-                    # Recovery: Ensure video is playing at normal speed
-                    js_reset = """
-                    const v = document.querySelector('video');
-                    if (v && v.playbackRate > 1.0) {
-                        v.playbackRate = 1.0;
-                        v.muted = false;
-                    }
+                    # Not an ad: ensure playback and normal speed
+                    js_resume = """
+                    try {
+                        const v = document.querySelector('video');
+                        if (v) {
+                            if (v.playbackRate > 1.0) v.playbackRate = 1.0;
+                            if (v.muted) v.muted = false;
+                            if (v.paused) v.play();
+                        }
+                    } catch(e) {}
                     """
-                    self.page.run_js(js_reset)
-                    # Periodic quality check
+                    self.page.run_js(js_resume)
                     if frames_saved % 20 == 0:
                         self.force_high_quality()
 
                 # 3. Capture Frame
                 if is_visible:
-                    # Persistently hide UI while in "Real Content" mode
                     if not is_ui_hidden:
                         self.toggle_chrome(False)
                         is_ui_hidden = True
                         
-                    frame_path = os.path.join(self.output_dir, f"frame_{frames_saved:04d}.png")
+                    # Get current video timestamp
+                    curr_video_time = self.page.run_js("return document.querySelector('video').currentTime;")
+                    
+                    frame_name = f"frame_{frames_saved:04d}.png"
+                    frame_path = os.path.join(self.output_dir, frame_name)
                     video_node.get_screenshot(path=frame_path)
                     
                     # 4. Change Detection (Hybrid)
                     curr_hist = self._get_histogram(frame_path)
-                    
-                    # Preprocess for OCR first to get text
                     ocr_path = self._preprocess_for_ocr(frame_path)
                     curr_text = self._get_text(ocr_path)
                     curr_text_len = len(curr_text)
                     curr_time = time.time()
                     
-                    # Detect Terminal Mode
-                    self.is_terminal_mode = self._is_terminal(frame_path)
+                    self.is_terminal_mode = self.is_terminal_window(frame_path)
                     
-                    # Decision Logic
                     should_save = False
                     reason = ""
                     
@@ -371,31 +424,35 @@ class AdvancedYTScraper:
                         should_save = True
                         reason = "Initial frame"
                     else:
-                        # 1. Histogram Check
                         dist = cv2.compareHist(self.last_histogram, curr_hist, cv2.HISTCMP_BHATTACHARYYA)
                         if dist > 0.01:
                             should_save = True
-                            reason = f"Visual change (dist: {dist:.3f})"
+                            reason = f"Visual change ({dist:.3f})"
                         
-                        # 2. Text Length Check (High priority for terminals)
                         len_diff = abs(curr_text_len - self.last_text_len)
                         if len_diff > 10:
                             should_save = True
-                            reason = f"Text change (diff: {len_diff})"
+                            reason = f"Text change ({len_diff})"
                         
-                        # 3. Terminal Timing Guard (1s gap)
                         if self.is_terminal_mode and (curr_time - self.last_capture_time > 1.0):
-                            if len_diff > 2: # Even a tiny text change in terminal is notable
+                            if len_diff > 2:
                                 should_save = True
-                                reason = "Terminal update (1s interval)"
+                                reason = "Terminal update"
 
-                    if should_save:
-                        self.logger.info(f"[+] Saved frame {frames_saved} - Reason: {reason}")
+                    if should_save and not self.is_ad_content(frame_path, curr_text):
+                        self.logger.info(f"[+] Saved frame {frames_saved} - T:{curr_video_time:.1f}s - Reason: {reason}")
                         
-                        # Save extracted text to .txt file
                         txt_path = frame_path.replace(".png", ".txt")
                         with open(txt_path, "w", encoding="utf-8") as f:
                             f.write(curr_text)
+                        
+                        results.append({
+                            "timestamp": curr_video_time,
+                            "frame_path": frame_path,
+                            "text_path": txt_path,
+                            "ocr_text": curr_text,
+                            "is_terminal": self.is_terminal_mode
+                        })
                             
                         frames_saved += 1
                         self.last_histogram = curr_hist
@@ -411,13 +468,14 @@ class AdvancedYTScraper:
                 self.logger.error(f"[-] Loop iteration error: {e}")
                 time.sleep(1)
 
-        self.logger.info(f"[*] Scrape complete. Saved {frames_saved} unique frames.")
+        self.logger.info(f"[*] Scrape complete. Captured {len(results)} structured data points.")
         self.page.quit()
+        return results
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--url", default="https://www.youtube.com/watch?v=3ku98xRQ9Ls")
+    parser.add_argument("--url", default="https://www.youtube.com/watch?v=SrBYVkTVZyw")
     parser.add_argument("--duration", type=int, default=60)
     args = parser.parse_args()
     

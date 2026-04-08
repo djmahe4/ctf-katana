@@ -32,6 +32,7 @@ output/
 *~
 .DS_Store
 data/
+recordings/
 
 # Rust
 target/

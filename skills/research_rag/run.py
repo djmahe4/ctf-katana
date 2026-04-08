@@ -234,6 +234,62 @@ class RAGSkill:
                 'repo_url': repo_url,
             }
     
+    def ingest_youtube_ocr(
+        self,
+        url: str,
+        results: List[Dict[str, Any]],
+        title: str = "",
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Ingest OCR results from AdvancedYTScraper into the knowledge base.
+        """
+        try:
+            # Extract video ID from URL
+            video_id = url.split("v=")[-1].split("&")[0] if "v=" in url else url
+            source = f"youtube_{video_id}"
+            
+            docs_added = 0
+            for item in results:
+                timestamp = item.get("timestamp", 0)
+                ocr_text = item.get("ocr_text", "")
+                frame_path = item.get("frame_path", "")
+                is_terminal = item.get("is_terminal", False)
+                
+                if not ocr_text.strip():
+                    continue
+                
+                # Add each frame as a semantic chunk with precise metadata
+                self.add_document(
+                    content=ocr_text,
+                    source=source,
+                    source_type="youtube",
+                    title=title or f"YouTube Walkthrough: {video_id}",
+                    url=url,
+                    tags=(tags or []) + ["ocr", "walkthrough"] + (["terminal"] if is_terminal else ["gui"]),
+                    metadata={
+                        "timestamp": timestamp,
+                        "frame_path": frame_path,
+                        "video_id": video_id,
+                        "is_terminal": is_terminal
+                    }
+                )
+                docs_added += 1
+            
+            return {
+                'status': 'success',
+                'message': f'Ingested {docs_added} frames from YouTube OCR',
+                'video_id': video_id,
+                'frames_indexed': docs_added
+            }
+        except Exception as e:
+            logger.error(f"YouTube ingestion error: {e}")
+            return {
+                'status': 'error',
+                'message': str(e),
+                'url': url
+            }
+    
     def get_stats(self) -> Dict[str, Any]:
         """Get knowledge base statistics."""
         try:
@@ -351,6 +407,22 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 repo_url=repo_url,
                 include_patterns=params.get('include_patterns'),
                 exclude_patterns=params.get('exclude_patterns'),
+            )
+        
+        elif action == 'ingest_youtube':
+            url = params.get('url')
+            results = params.get('results')
+            if not url or not results:
+                return {
+                    'status': 'error',
+                    'message': 'url and results parameters required for ingest_youtube action',
+                }
+            
+            return skill.ingest_youtube_ocr(
+                url=url,
+                results=results,
+                title=params.get('title', ''),
+                tags=params.get('tags'),
             )
         
         elif action == 'stats':

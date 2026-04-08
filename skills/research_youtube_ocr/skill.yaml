@@ -1,0 +1,45 @@
+name: research-youtube-ocr
+version: "1.0.0"
+description: |
+  Autonomous YouTube OCR Scraper for high-fidelity research data ingestion.
+  Captures frames based on visual and textual changes, specifically optimized for
+  GUI and Terminal content in cybersecurity walkthroughs.
+
+author: Purple Engine Team
+license: MIT
+
+category: research
+tags:
+  - youtube
+  - ocr
+  - research
+  - ingestion
+  - cybersecurity
+
+inputs:
+  url:
+    type: string
+    required: true
+    description: YouTube video URL to scrape
+  
+  max_duration:
+    type: integer
+    required: false
+    description: Maximum seconds to scrape (defaults to video length)
+
+outputs:
+  status:
+    type: string
+    description: success or error
+  
+  results:
+    type: array
+    description: List of captured frames with timestamps and OCR text
+
+examples:
+  - description: Scrape a CTF walkthrough video
+    input:
+      url: "https://www.youtube.com/watch?v=..."
+      max_duration: 300
+
+kavach_policy: standard

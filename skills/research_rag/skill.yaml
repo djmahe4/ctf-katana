@@ -52,7 +52,7 @@ inputs:
     type: string
     required: false
     default: search
-    enum: [search, add, ingest, stats, list_sources]
+    enum: [search, add, ingest, ingest_youtube, stats, list_sources]
     description: Action to perform
 
 outputs:
