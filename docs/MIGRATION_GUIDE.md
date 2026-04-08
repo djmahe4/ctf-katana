@@ -136,6 +136,20 @@ The following selections prioritize stability and seamless integration with the 
 | **Binary Analysis**| r2pipe + radare2 | Scriptable LLM-driven reverse engineering interface. | [r2pipe](https://github.com/radareorg/radare2-r2pipe) |
 | **Web Security** | Nuclei | Template-based scanning to replace brittle custom fuzzers. | [Nuclei](https://github.com/projectdiscovery/nuclei) |
 | **Data Layer** | Redis | State persistence and caching for multi-step loops. | [Redis](https://redis.io/) |
+| **Prexisting models integration** | Github | Training Cybersecuirty specific models for semantic understanding | [1](https://github.com/sajjadium/ctf-archives/) [2](https://github.com/swisskyrepo/PayloadsAllTheThings) [3](https://github.com/ljagiello/ctf-skills/tree/main) |
+
+
+#### Datasets to learn from
+
+| Repository Name | Description | Dataset Details & Format | Usage for Model Training | Usage for RAG (Direct Pass) | Reference URL |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| OSTIS-Organization-Specific-Threat-Intelligence-System | Organization-Specific Threat Intelligence System with knowledge graph (OSTIKG) | /Dataset folder: labeled data for relevance filtering, domain classification (Education, Finance, Government, Healthcare, ICS, IoT), and cybersecurity NER (entities: malware groups, tools, etc.). BERT-ready labels. | Fine-tune BERT-based models for content relevance, domain mapping, and 12+ cyber entity NER. Use datasets library + Hugging Face Trainer for multi-label classification. | Chunk JSON/CSV into vector DB; retrieve organization-specific threats during Purple Loop Search KB → improves agentic threat analysis and Kavach Shield context. | https://github.com/OPTIMA-CTI/OSTIS-Organization-Specific-Threat-Intelligence-System (Dataset: /tree/main/Dataset) |
+| Twitter-CTI | Automated pipeline for collecting and analyzing CTI from Twitter (OSINT) | dataset/ folder: ~200k+ security-related tweets with IoCs, account features, bot/human labels, temporal data, and threat indicators (CVEs, URLs, hashes). 47 features per record. | Train XGBoost / BERT classifiers for bot detection, tweet relevance, and IoC extraction. Labeled subset (3,231 human + 452 automated accounts) ready for supervised fine-tuning. | Embed tweets/IoCs as RAG chunks for real-time social-media threat intelligence in research skills; query “latest Twitter-reported CVEs” directly in Analyze/Plan phases. | https://github.com/OPTIMA-CTI/Twitter-CTI |
+| DroidTTP | Android TTP (Tactics, Techniques, Procedures) mapping using problem transformation and LLM analysis | dataset/ folder: curated Android malware datasets mapped to MITRE ATT&CK TTPs; supports problem-transformation approach and LLM fine-tuning. | Fine-tune LLMs for TTP prediction or use as supervised dataset for multi-label classification of Android behaviors. | Load into RAG index for mobile/IoT skills; retrieve ATT&CK-mapped examples during Execute phase for Android/IoT challenges. Perfect for your existing mobile skills category. | https://github.com/OPTIMA-CTI/DroidTTP (Dataset: /tree/main/dataset) |
+| CyberNER | Cybersecurity Named Entity Recognition models and dataset | Jupyter Notebook-based dataset with 12 cyber-specific entity types (malware, tools, vulnerabilities, actors, etc.). | Direct fine-tuning of spaCy/BERT NER models on cybersecurity corpus. | Embed labeled entities into your local KB/RAG for high-precision entity extraction in the Analyze agent (boosts Red/Blue separation and tool selection). | https://github.com/OPTIMA-CTI/CyberNER |
+| XAITrafficIntell | Explainable AI for traffic intelligence (darknet/threat traffic analysis) | Intelligence folder: scripts + datasets derived from darknet traffic (threat indicators, anomalies). | Train XAI models (e.g., SHAP/LIME + classifiers) on traffic features for anomaly detection. | RAG-augment network/forensics skills with darknet-derived threat patterns; useful for binary/web recon in Purple Loop. | https://github.com/OPTIMA-CTI/XAITrafficIntell |
+
+
 
 ### 🏗️ Architectural Considerations & WSL2 Readiness
 

@@ -3,6 +3,14 @@ __pycache__/
 *$py.class
 *.egg-info/
 dist/
+.vscode/
+debug_output/
+research_ingest.log
+debug_js_yt.py
+debug_yt_detection.py
+data/raw_research_units.json
+data/external_skills_index.json
+data/payloads_index.json
 build/
 .eggs/
 *.egg
