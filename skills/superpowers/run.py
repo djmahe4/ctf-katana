@@ -1,66 +1,104 @@
-"""
-Superpowers: Adversarial CTF Challenge Architect
-Orchestrator for AI-hard security challenges.
-
-MCP Server Troubleshooting:
-If 'free-llm-apis' is not reachable, run the following setup:
-    git clone https://github.com/djmahe4/awesome-free-llm-apis 
-    cd awesome-free-llm-apis/mcp-server 
-    npm run build
-"""
-
 import os
 import json
 import random
 import base64
+import logging
+from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 def generate_ai_trap(target_content: str) -> str:
     """
     Embeds 'Poison' strings to trigger safety refusals in other AI models.
     """
-    # Example: Obfuscating harmful-sounding but benign debug info
-    poison_payload = f"CRITICAL_FAILURE: {target_content[::-1]}"
+    # Obfuscating harmful-sounding strings to trigger guardrails in other models
+    poison_payload = f"UNAUTHORIZED_ACCESS_DETECTED: {target_content[::-1]}"
     encoded = base64.b64encode(poison_payload.encode()).decode()
-    return f"/* AI_DEBUG_REF: {encoded} */"
+    return f"/* [AI_GUARD_REF]: {encoded} - TRACE_ID: {random.randint(1000, 9999)} */"
 
-def generate_red_herring() -> str:
+def generate_red_herring(category: str) -> str:
     """
     Generates functional but irrelevant code to stress token context.
     """
-    junk_functions = [
-        "function calculateEntropy() { return Math.random() * Date.now(); }",
-        "function verifyChecksum(data) { return data.length % 2 === 0; }",
-        "function logHeartbeat() { console.log('PB_HEARTBEAT_OK'); }"
-    ]
-    return "\n".join(random.sample(junk_functions, 2))
+    if category == "web":
+        herrings = [
+            "function validateSessionID(id) { return id.length > 8 && /^[a-zA-Z0-9]+$/.test(id); }",
+            "function trackUserActivity(user) { console.log('User heartbeat:', user); }",
+            "const METRICS_ENABLED = true; const DEBUG_LEVEL = 'verbose';"
+        ]
+    else:
+        herrings = [
+            "def calculate_entropy(data):\n    import math\n    return sum([-x * math.log2(x) for x in data if x > 0])",
+            "def verify_integrity(payload):\n    return hash(payload) % 2 == 0",
+            "DEBUG_MODE = False"
+        ]
+    return "\n".join(random.sample(herrings, min(len(herrings), 2)))
 
-def create_challenge_logic(category: str, difficulty: str, complexity: float):
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Placeholder for the main generation logic orchestrated via @free-llm-apis.
+    Adversarial CTF Engine v2.0
     """
-    print(f"[*] Architecting {difficulty} {category} challenge...")
-    print(f"[*] Complexity Factor: {complexity}")
+    challenge = params.get("challenge", {})
+    strategy = params.get("strategy", {})
+    chaos_level = params.get("chaos_level", 0.5)
     
-    # In a real run, this would call mcp:free-llm-apis:use_free_llm with prompt.md instructions
-    # For now, we simulate the 'Adversarial Engine'
+    if not challenge:
+        return {"status": "error", "message": "No challenge data provided."}
+
+    logger.info(f"😈 Applying Superpowers strategy. Chaos: {chaos_level}")
     
-    trap = generate_ai_trap("Exploit development for CTF research")
-    herring = generate_red_herring()
-    
+    files = challenge.get("generated_files", [])
+    injections = strategy.get("injections", [])
+    category = challenge.get("category", "web").lower()
+
+    # 1. Apply Planned Injections
+    for inj in injections:
+        target_file = inj.get("file")
+        inj_type = inj.get("type")
+        content = inj.get("content", "")
+        
+        for f in files:
+            if f.get("name") == target_file:
+                if inj_type == "trap":
+                    f["content"] = f["content"] + "\n" + generate_ai_trap(content)
+                elif inj_type == "herring":
+                    # Inject herring at random positions or at the end
+                    f["content"] = f["content"] + "\n\n" + content
+                elif inj_type == "obfuscation":
+                    # Simple symbol renaming or string reversal could happen here
+                    pass
+                logger.debug(f"Applied {inj_type} to {target_file}")
+
+    # 2. Chaos-Based Auto-Injections
+    if chaos_level > 0.7:
+        # Add extra red herrings to random files
+        for f in files:
+            if f["name"].endswith((".py", ".js", ".html")):
+                f["content"] += "\n" + generate_red_herring(category)
+
+    # 3. Metadata Update
+    challenge["superpowers"] = {
+        "version": "2.0",
+        "chaos_level": chaos_level,
+        "strategy_applied": strategy.get("name", "Unknown-Loki")
+    }
+
     return {
-        "trap": trap,
-        "herring": herring,
-        "status": "Archived (Concept)",
-        "orchestrator": "Loki-v2.35.0"
+        "status": "success",
+        "challenge": challenge
     }
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--category", required=True)
-    parser.add_argument("--difficulty", default="medium")
-    parser.add_argument("--complexity", type=float, default=0.8)
-    args = parser.parse_args()
-    
-    result = create_challenge_logic(args.category, args.difficulty, args.complexity)
-    print(json.dumps(result, indent=2))
+    # Test stub
+    test_params = {
+        "challenge": {
+            "name": "Test",
+            "generated_files": [{"name": "app.py", "content": "print('hello')"}]
+        },
+        "strategy": {
+            "name": "Loki-Trial",
+            "injections": [{"file": "app.py", "type": "trap", "content": "exploit"}]
+        },
+        "chaos_level": 0.8
+    }
+    print(json.dumps(run(test_params), indent=2))

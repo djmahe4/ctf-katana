@@ -2,6 +2,7 @@ import logging
 import json
 import asyncio
 import httpx
+import os
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,48 @@ class AgenticSkillDispatcher:
                     "original_flag": flag,
                     "target_file": target_file
                 }
+            }
+            
+        elif skill_name == "merger":
+            # 1. Fetch the merger prompt
+            sys_prompt = await self._read_skill_prompt("merger")
+            
+            # 2. Prepare the context for the LLM
+            # Memory usually stores challenges in 'challenge_history' or similar
+            challenges = context.get("challenge_history", [])
+            if not challenges and "challenge" in context:
+                challenges = [context["challenge"]]
+                
+            input_context = json.dumps([{
+                "name": c.get("name"),
+                "category": c.get("category"),
+                "files": [f.get("name") for f in c.get("generated_files", [])]
+            } for c in challenges], indent=2)
+
+            # 3. Plan the merger layout via LLM
+            layout_plan = await self._plan_merger_layout(sys_prompt, input_context)
+            
+            return {
+                "selected_components": challenges,
+                "target_session": context.get("session_id", "katana_unified"),
+                "layout_plan": layout_plan
+            }
+
+        elif skill_name == "superpowers":
+            # 1. Fetch the adversarial prompt
+            sys_prompt = await self._read_skill_prompt("superpowers")
+            
+            # 2. Extract challenge context
+            challenge = context.get("challenge", {})
+            files_context = json.dumps([f.get("name") for f in challenge.get("generated_files", [])])
+            
+            # 3. Plan adversarial strategy
+            strategy = await self._plan_adversarial_strategy(sys_prompt, files_context, context.get("chaos_level", 0.5))
+            
+            return {
+                "challenge": challenge,
+                "strategy": strategy,
+                "chaos_level": context.get("chaos_level", 0.5)
             }
 
         return {}
@@ -222,3 +265,76 @@ class AgenticSkillDispatcher:
         except Exception as e:
             logger.error(f"Execution failed for skill: {e}")
             return {"status": "error", "message": str(e)}
+
+    async def _read_skill_prompt(self, skill_name: str) -> str:
+        """Helper to read the prompt.md from a local skill directory."""
+        prompt_path = os.path.join(self.workspace_root, "skills", skill_name, "prompt.md")
+        if os.path.exists(prompt_path):
+            with open(prompt_path, 'r') as f:
+                return f.read()
+        return ""
+
+    async def _plan_merger_layout(self, sys_prompt: str, input_context: str) -> Dict[str, Any]:
+        """Calls the LLM to perform architectural check and layout planning."""
+        logger.info("📐 Planning merger layout via LLM...")
+        
+        prompt = f"""
+        {sys_prompt}
+
+        Available Components Context:
+        {input_context}
+
+        Analyze and generate the layout plan JSON.
+        """
+        
+        # Use the existing Ollama channel for now, or use_free_llm if available
+        # But dispatcher is designed for local processing.
+        # We'll stick to the dispatcher's existing ollama pattern for consistency.
+        
+        # Note: If we had a more complex requirement, we'd use use_free_llm.
+        # For structural JSON inference, local Ollama is usually enough.
+        
+        model = await self._get_best_model()
+        url = "http://localhost:11434/api/generate"
+        payload = {"model": model, "prompt": prompt, "stream": False, "format": "json"}
+        
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, json=payload)
+                if response.status_code == 200:
+                    text = response.json().get("response", "{}")
+                    return json.loads(text)
+        except Exception as e:
+            logger.error(f"Merger planning failed: {e}")
+            
+        return {"mergeable": True, "services": []} # Fallback
+
+    async def _plan_adversarial_strategy(self, sys_prompt: str, files_context: str, chaos_level: float) -> Dict[str, Any]:
+        """Calls the LLM to design adversarial traps and red herrings."""
+        logger.info(f"😈 Planning adversarial strategy (Chaos: {chaos_level})...")
+        
+        prompt = f"""
+        {sys_prompt}
+
+        Target Challenge Files:
+        {files_context}
+
+        Current Chaos Level: {chaos_level}
+
+        Generate the adversarial strategy JSON.
+        """
+        
+        model = await self._get_best_model()
+        url = "http://localhost:11434/api/generate"
+        payload = {"model": model, "prompt": prompt, "stream": False, "format": "json"}
+        
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, json=payload)
+                if response.status_code == 200:
+                    text = response.json().get("response", "{}")
+                    return json.loads(text)
+        except Exception as e:
+            logger.error(f"Adversarial planning failed: {e}")
+            
+        return {"status": "failed", "injections": []}

@@ -11,6 +11,8 @@ from server.utils.agentic_dispatcher import AgenticSkillDispatcher
 # Skills
 from skills.research_challenge_gen.run import run as run_gen
 from skills.flagger.run import run as run_flagger
+from skills.merger.run import run as run_merger
+from skills.superpowers.run import run as run_superpowers
 from skills.ctfd_setup.run import run as run_setup
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,9 @@ class PipelineConductor:
             "idle": self._run_research,
             "research_complete": self._run_scaffolding,
             "scaffolding_complete": self._run_hardening,
-            "hardening_complete": self._run_deployment,
+            "hardening_complete": self._run_merger,
+            "merger_complete": self._run_superpowers,
+            "superpowers_complete": self._run_deployment,
             "deployment_complete": self._run_export,
             "export_complete": self._finish
         }
@@ -188,6 +192,83 @@ class PipelineConductor:
 
             self.memory.update_context("hardened_payload", result.get("payload"))
             self.memory.transition("hardening_complete")
+
+    async def _run_merger(self):
+        """
+        Handles the merging of multiple web components if applicable.
+        Includes an architectural check and a HITL choice.
+        """
+        logger.info("🧩 Evaluating Merger Opportunities...")
+        
+        # Check if we have multiple components or if the user explicitly requested a merge
+        # For the current single-loop, we might simulate a list of components or just check if it's 'web'
+        challenge = self.memory.get_context("challenge")
+        category = challenge.get("category", "").lower()
+        
+        # In a real batch scenario, context would contain 'challenge_history'
+        components = self.memory.get_context("challenge_history") or [challenge]
+        
+        # Rule: Only trigger merger if multiple web components exist OR if it's complex enough to warrant a unified UI
+        is_web = category == "web" or any(c.get("category") == "web" for c in components)
+        
+        if len(components) > 1 and is_web:
+            params = await self.dispatcher.prepare_params("merger", {"challenge_history": components, "session_id": self.target})
+            
+            # HITL Gate: Choice and Architectural Confirmation
+            task_id = "merger_layout"
+            if self.interactive and not self.memory.is_approved(task_id):
+                logger.info("🚦 Intercepting for Merger Layout Review...")
+                if await self.reviewer.request_review(task_id, params.get("layout_plan", {})) != ReviewStatus.APPROVED:
+                    logger.warning("Merger aborted by user. Proceeding with single challenge.")
+                    self.memory.transition("merger_complete")
+                    return
+                self.memory.mark_approved(task_id)
+            
+            result = self.dispatcher.execute_local(run_merger, params)
+            if result.get("status") == "success":
+                logger.info("✅ Merger successful! Updating context with unified challenge.")
+                self.memory.update_context("challenge", result["merged_challenge"])
+            else:
+                logger.error(f"Merger failed: {result.get('message')}")
+        else:
+            logger.info("⏭️  Single component detected. Skipping merger.")
+
+        self.memory.transition("merger_complete")
+
+    async def _run_superpowers(self):
+        """
+        Applies adversarial enhancements to the challenge.
+        """
+        logger.info("😈 Activating Superpowers (Adversarial Engine)...")
+        challenge = self.memory.get_context("challenge")
+        
+        # Get chaos level from memory or default to 0.5
+        chaos_level = self.memory.state.get("chaos_level", 0.5)
+        
+        params = await self.dispatcher.prepare_params("superpowers", {
+            "challenge": challenge, 
+            "chaos_level": chaos_level
+        })
+        
+        # HITL Gate: Strategy Review
+        task_id = "adversarial_strategy"
+        if self.interactive and not self.memory.is_approved(task_id):
+            logger.info("🚦 Intercepting for Adversarial Strategy Review...")
+            if await self.reviewer.request_review(task_id, params.get("strategy", {})) != ReviewStatus.APPROVED:
+                logger.warning("Superpowers bypassed by user.")
+                self.memory.transition("superpowers_complete")
+                return
+            self.memory.mark_approved(task_id)
+
+        result = self.dispatcher.execute_local(run_superpowers, params)
+        
+        if result.get("status") == "success":
+            logger.info("✅ Superpowers applied! Challenge is now AI-Hard.")
+            self.memory.update_context("challenge", result["challenge"])
+        else:
+            logger.error(f"Superpowers failed: {result.get('message')}")
+            
+        self.memory.transition("superpowers_complete")
 
     async def _run_deployment(self):
         logger.info("🚀 Preparing CTFd Deployment...")
