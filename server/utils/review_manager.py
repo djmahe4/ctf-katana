@@ -81,6 +81,17 @@ class ReviewManager:
                         path = file.get("path") or file.get("name", "unknown")
                         code = file.get("content", "")
                         self._print_file_snippet(path, code)
+            
+            # Case 3: Hardening (Flagger phase)
+            elif review_type == "hardening":
+                flag = content.get("flag", "HIDDEN")
+                target = content.get("target_file", "unknown")
+                payload = content.get("payload", "")
+                print(f"\n⚡ HARDENING RESULT:")
+                print(f"🚩 FLAG: {flag}")
+                print(f"🎯 TARGET: {target}")
+                if payload:
+                    self._print_file_snippet("HARDENED PAYLOAD", payload)
         
         print("="*60 + "\n")
         
@@ -92,11 +103,11 @@ class ReviewManager:
     def _print_file_snippet(self, name: str, code: str):
         """Helper to print a pretty snippet of code."""
         lines = code.split("\n")
-        snippet = "\n".join(lines[:10])
+        snippet = "\n".join(lines[:30])
         print(f"\n--- [ {name} ] ---")
         print(snippet)
-        if len(lines) > 10:
-            print(f"... ({len(lines)-10} more lines)")
+        if len(lines) > 30:
+            print(f"... ({len(lines)-30} more lines)")
 
     async def _wait_for_signal(self, task_id: str, signal_path: str, timeout: int) -> ReviewStatus:
         """Polls the signal file for user/agent intervention."""

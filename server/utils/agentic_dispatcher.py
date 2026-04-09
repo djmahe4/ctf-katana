@@ -42,10 +42,53 @@ class AgenticSkillDispatcher:
             return params
             
         elif skill_name == "flagger":
+            # Infer handler and template from challenge artifacts
             challenge = context.get("challenge", {})
+            files = challenge.get("generated_files", [])
+            category = challenge.get("category", "").lower()
+            
+            # 1. Defaults
+            handler_type = "reverse"
+            template = "python"
+            target_file = "unknown"
+            
+            # 2. Category Inference
+            if category in ["web", "web3", "mobile"]:
+                handler_type = "web"
+                template = "html"
+            
+            # 3. File-Based Overrides (Stronger Signal)
+            has_py = any(f.get("name", "").endswith(".py") for f in files)
+            has_web = any(f.get("name", "").endswith((".html", ".js")) for f in files)
+            
+            if has_py and not has_web:
+                handler_type = "reverse"
+                template = "python"
+            elif has_web and not has_py:
+                handler_type = "web"
+                template = "html"
+                
+            # 4. Target Selection
+            if handler_type == "reverse":
+                target_file = next((f.get("name") for f in files if f.get("name").endswith(".py")), "unknown")
+            else:
+                target_file = next((f.get("name") for f in files if f.get("name").endswith((".html", ".js"))), "unknown")
+
+            # Get Flag from research or default
+            vuln_id = context.get("research_results", {}).get("local", {}).get("vuln_id", "CTF_CHALLENGE")
+            flag = f"katana{{{vuln_id.replace('-', '_')}_pwned}}"
+            
+            logger.info(f"🎯 Inferred Flagger Params: handler={handler_type}, template={template}, target={target_file}")
+            
             return {
-                "challenge_id": challenge.get("id"),
-                "flag_format": "katana{...}"
+                "flag": flag,
+                "handler": handler_type,
+                "template": template,
+                "level": "moderate",
+                "metadata": { # Carry these for the ReviewManager
+                    "original_flag": flag,
+                    "target_file": target_file
+                }
             }
 
         return {}

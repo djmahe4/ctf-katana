@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 import ollama
 import json
+import asyncio
 
 # Tier 1 (Lite)
 from context.local_context import LocalKnowledge
@@ -186,20 +187,31 @@ class KnowledgeRegistry:
         
         try:
             client = ollama.AsyncClient(host=host)
-            response = await client.chat(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                format="json"
+            # ⏳ Reliability: Add timeout to prevent indefinite hangs
+            response = await asyncio.wait_for(
+                client.chat(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    format="json"
+                ),
+                timeout=60.0 # 1 minute max for delta analysis
             )
             return json.loads(response["message"]["content"])
+        except asyncio.TimeoutError:
+            logger.warning("⏰ Ollama timeout during Security Delta analysis. Using fallback.")
+            return {
+                "vulnerability_root": "UNKNOWN (Timeout)",
+                "fix_strategy": "Timeout while analyzing deltas.",
+                "hardening_delta": "Manual investigation required due to LLM timeout."
+            }
         except Exception as e:
             logger.error(f"Security Delta analysis failed: {e}")
             return {
                 "vulnerability_root": "UNKNOWN",
-                "fix_strategy": "Analysis failed.",
+                "fix_strategy": f"Analysis failed: {str(e)}",
                 "hardening_delta": "Manual investigation required."
             }
 
