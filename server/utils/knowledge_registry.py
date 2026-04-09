@@ -23,8 +23,11 @@ class KnowledgeRegistry:
     and LLM-guided scraping results.
     """
 
-    def __init__(self, workspace_root: Optional[Path] = None):
-        self.workspace_root = workspace_root or Path.cwd()
+    def __init__(self, workspace_root: Optional[Any] = None):
+        if workspace_root:
+            self.workspace_root = Path(workspace_root)
+        else:
+            self.workspace_root = Path.cwd()
         
         # Tier 1: Lite (Fast Markdown lookup)
         self.local = LocalKnowledge()
