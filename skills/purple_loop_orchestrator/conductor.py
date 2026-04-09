@@ -26,12 +26,14 @@ class PipelineConductor:
                  memory: PipelineMemory, 
                  reviewer: ReviewManager, 
                  knowledge_registry: KnowledgeRegistry, 
-                 workspace_root: str):
+                 workspace_root: str,
+                 interactive: bool = True):
         self.target = target
         self.memory = memory
         self.reviewer = reviewer
         self.registry = knowledge_registry
         self.workspace_root = workspace_root
+        self.interactive = interactive
         self.dispatcher = AgenticSkillDispatcher(workspace_root=workspace_root)
         
         # Hydrate memory from local state
@@ -113,7 +115,7 @@ class PipelineConductor:
         params = await self.dispatcher.prepare_params("scaffolding", context)
         
         # 1.5 HITL Gate for Draft Review
-        if params.get("interactive"):
+        if self.interactive:
             task_id = "agentic_draft"
             if not self.memory.is_approved(task_id):
                 logger.info(f"🚦 Intercepting for {task_id.replace('_', ' ').title()} Review...")
@@ -124,6 +126,9 @@ class PipelineConductor:
                 self.memory.mark_approved(task_id)
             else:
                 logger.info(f"✅ Skipping {task_id.replace('_', ' ').title()} Review (Already Approved)")
+        else:
+            logger.info("🤖 [E2E] Auto-approving Agentic Draft for automation.")
+            self.memory.mark_approved("agentic_draft")
 
         logger.info("🏗️  Scaffolding Challenge Artifacts...")
         # 2. Local Skill Execution
@@ -145,12 +150,16 @@ class PipelineConductor:
         # 4. HITL Gate (Review Scaffolding Code)
         task_id = "scaffolding"
         if not self.memory.is_approved(task_id):
-            logger.info(f"🚦 Waiting for HITL Review ({task_id.title()})...")
-            if await self.reviewer.request_review(task_id, challenge) != ReviewStatus.APPROVED:
-                logger.warning("Changes requested! Feedback loop re-triggering generation.")
-                self.memory.transition("research_complete")
-                return
-            self.memory.mark_approved(task_id)
+            if not self.interactive:
+                logger.info(f"🤖 [E2E] Auto-approving {task_id} Review for automation.")
+                self.memory.mark_approved(task_id)
+            else:
+                logger.info(f"🚦 Waiting for HITL Review ({task_id.title()})...")
+                if await self.reviewer.request_review(task_id, challenge) != ReviewStatus.APPROVED:
+                    logger.warning("Changes requested! Feedback loop re-triggering generation.")
+                    self.memory.transition("research_complete")
+                    return
+                self.memory.mark_approved(task_id)
         else:
             logger.info(f"✅ Skipping {task_id.title()} Review (Already Approved)")
 
@@ -165,12 +174,15 @@ class PipelineConductor:
             # 5. HITL Gate (Review Hardening)
             task_id = "hardening"
             if not self.memory.is_approved(task_id):
-                logger.info(f"🚦 Waiting for HITL Review ({task_id.title()})...")
-                if await self.reviewer.request_review(task_id, result, review_type="hardening") != ReviewStatus.APPROVED:
-                    logger.warning("Hardening rejected. Re-running with potential adjustments.")
-                    # Fallback or retry logic here
-                    return
-                self.memory.mark_approved(task_id)
+                if not self.interactive:
+                    logger.info(f"🤖 [E2E] Auto-approving {task_id} Review for automation.")
+                    self.memory.mark_approved(task_id)
+                else:
+                    logger.info(f"🚦 Waiting for HITL Review ({task_id.title()})...")
+                    if await self.reviewer.request_review(task_id, result, review_type="hardening") != ReviewStatus.APPROVED:
+                        logger.warning("Hardening rejected. Re-running with potential adjustments.")
+                        return 
+                    self.memory.mark_approved(task_id)
             else:
                 logger.info(f"✅ Skipping {task_id.title()} Review (Already Approved)")
 
@@ -236,6 +248,7 @@ class PipelineConductor:
             json.dump(manifest, f, indent=4, default=str)
             
         logger.info(f"✅ Export completed to: {export_dir}")
+        self.memory.update_context("export_path", export_dir)
         self.memory.transition("export_complete")
 
     async def _finish(self):

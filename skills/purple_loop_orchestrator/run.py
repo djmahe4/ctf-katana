@@ -23,6 +23,7 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     target = params.get('target')
     reset = params.get('reset', False)
+    interactive = params.get('interactive', True)
     
     # 1. Initialize Memory & State
     # We use a subfolder for each target to avoid state collisions
@@ -43,7 +44,8 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
         memory=memory,
         reviewer=reviewer,
         knowledge_registry=registry,
-        workspace_root=str(PROJECT_ROOT)
+        workspace_root=str(PROJECT_ROOT),
+        interactive=interactive
     )
     
     try:
