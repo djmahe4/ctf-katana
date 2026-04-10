@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List
-from .models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
+from skills.fuzzing.models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
 
 logger = logging.getLogger(__name__)
 

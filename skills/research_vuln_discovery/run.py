@@ -17,10 +17,11 @@ from datetime import datetime
 from enum import Enum
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from skills.research.knowledge_base import KnowledgeBase
+from context.knowledge_base import KnowledgeBase
 
 logger = logging.getLogger(__name__)
 
@@ -479,8 +480,9 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     if not target:
         return {
-            'status': 'error',
-            'message': 'target parameter required',
+            'status': False,
+            'summary': 'target parameter required',
+            'result': {}
         }
     
     try:
@@ -490,51 +492,80 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         engine = VulnDiscoveryEngine()
-        result = engine.discover(
+        discovery_result = engine.discover(
             target=target,
             target_type=target_type,
             vuln_classes=vuln_classes if vuln_classes else None,
             depth=depth,
         )
         
+        res_data = {
+            'status': discovery_result.status,
+            'target': discovery_result.target,
+            'target_type': discovery_result.target_type,
+            'vulnerabilities': [asdict(v) for v in discovery_result.vulnerabilities[:50]],
+            'summary': discovery_result.summary,
+            'duration': discovery_result.duration,
+        }
+
+        vuln_count = discovery_result.summary.get('total', 0)
+        summary = f"Vulnerability discovery on '{discovery_result.target}' ({discovery_result.target_type}) found {vuln_count} potential issues."
+        
         return {
-            'status': result.status,
-            'target': result.target,
-            'target_type': result.target_type,
-            'vulnerabilities': [asdict(v) for v in result.vulnerabilities[:50]],
-            'summary': result.summary,
-            'duration': result.duration,
+            'status': discovery_result.status == "success",
+            'summary': summary,
+            'result': res_data
         }
         
     except Exception as e:
         logger.error(f"Discovery error: {e}")
         return {
-            'status': 'error',
-            'message': str(e),
+            'status': False,
+            'summary': f"Discovery error: {str(e)}",
+            'result': {'error': str(e)}
         }
 
 
 def main():
-    """CLI entry point."""
+    """CLI entry point for testing."""
     import argparse
     
     parser = argparse.ArgumentParser(description='Vulnerability Discovery CLI')
-    parser.add_argument('target', help='Target to analyze')
+    parser.add_argument('target', nargs='?', help='Target to analyze')
     parser.add_argument('--type', '-t', dest='target_type',
                         choices=['auto', 'code', 'web', 'repo', 'binary'],
                         default='auto')
     parser.add_argument('--depth', '-d', choices=['quick', 'medium', 'deep'], default='medium')
     parser.add_argument('--vulns', '-v', nargs='+', help='Specific vuln classes to hunt')
+    parser.add_argument('--json', help='Pass parameters as JSON string')
+    parser.add_argument('--test', action='store_true', help='Run sanity test')
     
     args = parser.parse_args()
     
-    result = run({
-        'target': args.target,
-        'target_type': args.target_type,
-        'depth': args.depth,
-        'vuln_classes': args.vulns,
-    })
+    if args.test:
+        print("[*] Testing Vuln Discovery Engine...")
+        result = run({'target': '.', 'depth': 'quick'})
+        print(json.dumps(result, indent=2, default=str))
+        return
+
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError:
+            print(json.dumps({'status': False, 'summary': 'Invalid JSON input', 'result': {}}))
+            return
+    else:
+        if not args.target:
+            parser.print_help()
+            return
+        params = {
+            'target': args.target,
+            'target_type': args.target_type,
+            'depth': args.depth,
+            'vuln_classes': args.vulns,
+        }
     
+    result = run(params)
     print(json.dumps(result, indent=2, default=str))
 
 

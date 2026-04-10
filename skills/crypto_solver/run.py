@@ -1,9 +1,11 @@
-"""Crypto-solver skill – classical ciphers and encoding helpers."""
-
 from __future__ import annotations
 
 import base64 as _b64
 import codecs
+import sys
+import json
+import argparse
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -103,13 +105,63 @@ _ACTIONS = {
 }
 
 
-def run(inputs: dict) -> dict:
+def run(params: dict) -> dict:
     """Skill entry-point called by the registry."""
-    action = inputs.get("action", "")
+    action = params.get("action", "")
     fn = _ACTIONS.get(action)
     if fn is None:
-        return {"error": f"Unknown action: {action}", "available": list(_ACTIONS)}
+        return {
+            "status": False,
+            "summary": f"Unknown action: {action}",
+            "result": {"available": list(_ACTIONS)}
+        }
     try:
-        return {"result": fn(inputs)}
+        result = fn(params)
+        return {
+            "status": True,
+            "summary": f"Performed {action} on input.",
+            "result": result
+        }
     except Exception as exc:
-        return {"error": str(exc)}
+        return {
+            "status": False, 
+            "summary": f"Action '{action}' failed: {str(exc)}",
+            "result": {"error_detail": str(exc)}
+        }
+
+def main():
+    # Add project root to sys.path for standalone execution
+    root_path = str(Path(__file__).resolve().parent.parent.parent)
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+
+    parser = argparse.ArgumentParser(description="Crypto Solver CLI")
+    parser.add_argument("action", choices=list(_ACTIONS.keys()), help="Action to perform")
+    parser.add_argument("--text", help="Input text for classical ciphers")
+    parser.add_argument("--data_hex", help="Hex data for XOR operations")
+    parser.add_argument("--shift", type=int, default=13, help="Caesar shift value")
+    parser.add_argument("--key", help="Key for Vigenere or XOR")
+    parser.add_argument("--json", action="store_true", help="Output JSON results")
+
+    args = parser.parse_args()
+    params = vars(args)
+    
+    # Simple type conversion for params that might be expected as int
+    if params.get('key') and params['key'].isdigit():
+        params['key_int'] = int(params['key'])
+    
+    result = run(params)
+    
+    if args.json:
+        print(json.dumps(result, indent=2))
+        sys.exit(0 if result['status'] else 1)
+
+    if not result['status']:
+        print(f"Error: {result['summary']}")
+        sys.exit(1)
+        
+    print(f"[*] Success: {result['summary']}")
+    print(json.dumps(result.get('result', {}), indent=2))
+
+if __name__ == "__main__":
+    main()

@@ -2,16 +2,70 @@ import sys
 import os
 import argparse
 from pathlib import Path
+from typing import Dict, Any, List, Optional
+from dataclasses import asdict
 
-# Add project skills directory to sys.path for standalone execution
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+from skills.forensics.models import ForensicsCategory, Severity
+from skills.forensics.handlers.pcap_handler import PcapHandler
+from skills.forensics.handlers.file_handler import FileHandler
+from skills.forensics.engines.pcap_designer import PcapDesigner
 
-from forensics.models import ForensicsCategory, Severity
-from forensics.handlers.pcap_handler import PcapHandler
-from forensics.handlers.file_handler import FileHandler
-from forensics.engines.pcap_designer import PcapDesigner
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute the forensics skill with given parameters."""
+    target = params.get('target')
+    if not target:
+        return {'status': 'error', 'summary': 'Target required'}
+    
+    target_path = Path(target)
+    mode = params.get('mode', 'auto')
+    
+    # Auto-detect mode
+    if mode == "auto":
+        if target_path.suffix.lower() in [".pcap", ".pcapng"]:
+            mode = "pcap"
+        else:
+            mode = "file"
+            
+    try:
+        if mode == "pcap":
+            handler = PcapHandler()
+        else:
+            handler = FileHandler()
+            
+        # Select action
+        kwargs = params.copy()
+        if "action" not in kwargs:
+            kwargs["action"] = "file_magic"
+        kwargs["pcap_action"] = kwargs["action"]
+        
+        result = handler.analyze(target_path, **kwargs)
+        
+        return {
+            'status': 'success',
+            'summary': result.summary,
+            'result': {
+                'findings': [
+                    {
+                        'id': f.vulnerability_id,
+                        'description': f.description,
+                        'severity': f.severity.value,
+                        'evidence': f.evidence
+                    } for f in result.findings
+                ],
+                'extracted_files': result.extracted_files,
+                'category': result.category.value,
+                'target': str(target_path)
+            }
+        }
+    except Exception as e:
+        return {'status': 'error', 'summary': str(e)}
 
 def main():
+    # Standalone support: Add project root to sys.path
+    project_root = Path(__file__).resolve().parent.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
     parser = argparse.ArgumentParser(description="Advanced Forensics & PCAP Steganography Tool")
     parser.add_argument("target", nargs="?", help="Target file/directory for analysis.")
     parser.add_argument("--action", "-a", choices=["file_magic", "foremost", "pngcheck", "pdf_text", "extract", "embed", "think"], default="file_magic")
@@ -34,10 +88,9 @@ def main():
         if not args.prompt:
             print("Error: --prompt required for 'think' action.")
             sys.exit(1)
+        # Use absolute import here or from imports
         designer = PcapDesigner(model=args.model)
         print(f"[*] Triggering Llama-based brainstorming for: '{args.prompt}'")
-        # In actual usage, the user would invoke the free-llm-apis MCP via the agent.
-        # This CLI provides the entry point for that 'thinking' session.
         sys.exit(0)
 
     if not args.target:

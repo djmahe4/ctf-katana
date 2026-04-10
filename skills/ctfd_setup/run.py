@@ -11,19 +11,29 @@ import sys
 import subprocess
 import time
 import shutil
+import logging
+import re
+import argparse
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
-import logging
-import re
 
 # Add project root for imports
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# Import CTFd API client from server utils
-from server.utils.ctfd_client import CTFdAPIClient, CTFdChallenge
+
+# Standardized imports with fallback for CTFd API client
+try:
+    from skills.api_client import CTFdAPIClient, CTFdChallenge
+except ImportError:
+    try:
+        from server.utils.ctfd_client import CTFdAPIClient, CTFdChallenge
+    except ImportError:
+        # Fallback if both fail
+        class CTFdAPIClient: pass
+        class CTFdChallenge: pass
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +87,7 @@ class CTFdSetup:
             self.docker_compose_dir = Path(docker_compose_dir)
         else:
             # Default to configs/ctfd relative to repo root
-            repo_root = Path(__file__).parent.parent.parent.parent
-            self.docker_compose_dir = repo_root / "configs" / "ctfd"
+            self.docker_compose_dir = Path(project_root) / "configs" / "ctfd"
         
         self.ctfd_url = "http://localhost:8000"
         self.setup_log = []
@@ -242,7 +251,11 @@ class CTFdSetup:
         self.log("Performing initial CTFd setup...")
         
         import requests
-        from bs4 import BeautifulSoup
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            self.log("BeautifulSoup4 not installed, cannot perform initial setup", "error")
+            return False
         
         session = requests.Session()
         
@@ -293,7 +306,7 @@ class CTFdSetup:
             self.log(f"Setup error: {e}", "error")
             return False
     
-    def configure_event_settings(self, client: CTFdAPIClient) -> bool:
+    def configure_event_settings(self, client: Any) -> bool:
         """Configure event-specific settings."""
         self.log("Configuring event settings...")
         
@@ -355,7 +368,7 @@ class CTFdSetup:
             self.log(f"Plugin {plugin_name} installation failed: {stderr}", "warning")
             return False
     
-    def import_challenge_pack(self, pack_path: str, client: CTFdAPIClient) -> int:
+    def import_challenge_pack(self, pack_path: str, client: Any) -> int:
         """Import challenges from a pack."""
         self.log(f"Importing challenge pack: {pack_path}...")
         
@@ -406,10 +419,10 @@ class CTFdSetup:
         
         # Phase 1: Pre-flight checks
         if not self.check_docker():
-            return {'status': 'failed', 'error': 'Docker not available', 'setup_log': self.setup_log}
+            return {'status': False, 'summary': 'Docker not available', 'result': {'setup_log': self.setup_log}}
         
         if not self.check_docker_compose():
-            return {'status': 'failed', 'error': 'Docker Compose not available', 'setup_log': self.setup_log}
+            return {'status': False, 'summary': 'Docker Compose not available', 'result': {'setup_log': self.setup_log}}
         
         port_available = self.check_port_available(8000)
         if not port_available:
@@ -420,15 +433,15 @@ class CTFdSetup:
         
         # Phase 3: Deploy Docker stack
         if not self.deploy_docker_stack():
-            return {'status': 'failed', 'error': 'Docker deployment failed', 'setup_log': self.setup_log}
+            return {'status': False, 'summary': 'Docker deployment failed', 'result': {'setup_log': self.setup_log}}
         
         # Phase 4: Wait for health
         if not self.wait_for_ctfd():
-            return {'status': 'failed', 'error': 'CTFd health check timeout', 'setup_log': self.setup_log}
+            return {'status': False, 'summary': 'CTFd health check timeout', 'result': {'setup_log': self.setup_log}}
         
         # Phase 5: Initial setup
         if not self.perform_initial_setup():
-            return {'status': 'failed', 'error': 'Initial setup failed', 'setup_log': self.setup_log}
+            return {'status': False, 'summary': 'Initial setup failed', 'result': {'setup_log': self.setup_log}}
         
         # Phase 6: Configure via API
         try:
@@ -438,7 +451,7 @@ class CTFdSetup:
                 password=self.admin_password
             )
             
-            if not client.authenticated:
+            if not getattr(client, 'authenticated', False):
                 self.log("API authentication failed", "warning")
         except Exception as e:
             self.log(f"API client error: {e}", "warning")
@@ -478,8 +491,7 @@ class CTFdSetup:
             self.warnings.append("HTTP only - configure HTTPS for production deployment")
         
         # Build result
-        result = {
-            'status': 'success',
+        result_data = {
             'ctfd_url': self.ctfd_url,
             'admin_credentials': {
                 'username': self.admin_username,
@@ -498,7 +510,7 @@ class CTFdSetup:
             'plugins_failed': plugins_failed,
             'theme': self.theme,
             'challenges_imported': challenges_imported,
-            'challenges_failed': len(self.challenge_packs) - (challenges_imported > 0),
+            'challenges_failed': len(self.challenge_packs) - (challenges_imported > 0 if self.challenge_packs else 0),
             'backup_path': backup_path,
             'setup_log': self.setup_log,
             'next_steps': [
@@ -511,62 +523,113 @@ class CTFdSetup:
             'warnings': self.warnings
         }
         
-        if plugins_failed or challenges_imported == 0 and self.challenge_packs:
-            result['status'] = 'partial'
+        status = True
+        if plugins_failed or (challenges_imported == 0 and self.challenge_packs):
+            status = True # Still True for partial success
         
+        summary = "CTFd setup completed successfully"
+        if plugins_failed:
+             summary = "CTFd setup completed with some plugin failures"
+        elif challenges_imported == 0 and self.challenge_packs:
+             summary = "CTFd setup completed but no challenges were imported"
+             
+        if challenges_imported > 0:
+            summary += f". Imported {challenges_imported} challenges."
+            
         self.log("CTFd setup completed!")
-        return result
+        return {
+            'status': status,
+            'summary': summary,
+            'result': result_data
+        }
 
 
-def run(inputs: Dict[str, Any]) -> Dict[str, Any]:
+
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main entry point for ctfd_setup skill.
     
     Args:
-        inputs: Dictionary with setup parameters
+        params: Dictionary with setup parameters
         
     Returns:
-        Dictionary with setup results
+        Dictionary with status, summary, and result
     """
     try:
         setup = CTFdSetup(
-            deployment_mode=inputs.get('deployment_mode', 'quick'),
-            admin_username=inputs.get('admin_username', 'admin'),
-            admin_password=inputs.get('admin_password', 'admin'),
-            admin_email=inputs.get('admin_email', 'admin@ctfd.local'),
-            ctf_name=inputs.get('ctf_name', 'Purple Engine CTF'),
-            ctf_description=inputs.get('ctf_description', 'Powered by Purple Engine - Agentic AI CTF Platform'),
-            user_mode=inputs.get('user_mode', 'teams'),
-            challenge_visibility=inputs.get('challenge_visibility', 'private'),
-            registration_visibility=inputs.get('registration_visibility', 'public'),
-            start_time=inputs.get('start_time'),
-            end_time=inputs.get('end_time'),
-            install_plugins=inputs.get('install_plugins', []),
-            theme=inputs.get('theme', 'core'),
-            challenge_packs=inputs.get('challenge_packs', []),
-            docker_compose_dir=inputs.get('docker_compose_dir'),
-            wait_timeout=inputs.get('wait_timeout', 60),
-            auto_backup=inputs.get('auto_backup', True)
+            deployment_mode=params.get('deployment_mode', 'quick'),
+            admin_username=params.get('admin_username', 'admin'),
+            admin_password=params.get('admin_password', 'admin'),
+            admin_email=params.get('admin_email', 'admin@ctfd.local'),
+            ctf_name=params.get('ctf_name', 'Purple Engine CTF'),
+            ctf_description=params.get('ctf_description', 'Powered by Purple Engine - Agentic AI CTF Platform'),
+            user_mode=params.get('user_mode', 'teams'),
+            challenge_visibility=params.get('challenge_visibility', 'private'),
+            registration_visibility=params.get('registration_visibility', 'public'),
+            start_time=params.get('start_time'),
+            end_time=params.get('end_time'),
+            install_plugins=params.get('install_plugins', []),
+            theme=params.get('theme', 'core'),
+            challenge_packs=params.get('challenge_packs', []),
+            docker_compose_dir=params.get('docker_compose_dir'),
+            wait_timeout=params.get('wait_timeout', 60),
+            auto_backup=params.get('auto_backup', True)
         )
         
-        result = setup.execute()
-        return result
+        return setup.execute()
         
     except Exception as e:
         logger.error(f"CTFd setup error: {e}", exc_info=True)
         return {
-            'status': 'error',
-            'error': str(e)
+            'status': False,
+            'summary': f"Error during CTFd setup: {str(e)}",
+            'result': {'error': str(e)}
         }
 
 
+def main():
+    parser = argparse.ArgumentParser(description="CTFd Setup Orchestrator")
+    parser.add_argument('--json', help='JSON Parameters')
+    parser.add_argument('--test', action='store_true', help='Run sanity check')
+    
+    # Legacy CLI arguments
+    parser.add_argument("--mode", dest="deployment_mode", default="quick", choices=["quick", "full"])
+    parser.add_argument("--username", dest="admin_username", default="admin")
+    parser.add_argument("--password", dest="admin_password", default="admin")
+    parser.add_argument("--email", dest="admin_email", default="admin@ctfd.local")
+    parser.add_argument("--name", dest="ctf_name", default="Purple Engine CTF")
+    parser.add_argument("--plugins", dest="install_plugins", nargs="*", default=[])
+    parser.add_argument("--packs", dest="challenge_packs", nargs="*", default=[])
+    
+    args = parser.parse_args()
+    
+    if args.test:
+        print("Running sanity check for ctfd_setup...")
+        try:
+            try:
+                from skills.api_client import CTFdAPIClient
+            except ImportError:
+                from api_client import CTFdAPIClient
+            print("✓ Successfully imported CTFdAPIClient")
+            print("✓ Sanity check passed.")
+            sys.exit(0)
+        except Exception as e:
+            print(f"✗ Sanity check failed: {e}")
+            sys.exit(1)
+
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError:
+            params = vars(args)
+    else:
+        params = vars(args)
+        params.pop('json', None)
+        params.pop('test', None)
+        params = {k: v for k, v in params.items() if v is not None}
+        
+    output = run(params)
+    print(json.dumps(output, indent=2))
+
 if __name__ == '__main__':
-    # Example usage
-    logging.basicConfig(level=logging.INFO)
-    
-    test_inputs = {
-        'deployment_mode': 'quick'
-    }
-    
-    result = run(test_inputs)
-    print(json.dumps(result, indent=2))
+    main()

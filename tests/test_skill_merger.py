@@ -14,8 +14,8 @@ def test_merger_basic_success():
     }
 
     result = run(params)
-    assert result["status"] == "success"
-    challenge = result["merged_challenge"]
+    assert result["status"] is True
+    challenge = result["result"]["merged_challenge"]
     files = challenge["generated_files"]
     
     file_names = [f["name"] for f in files]
@@ -35,7 +35,7 @@ def test_merger_port_collision_fallback():
     }
     
     result = run(params)
-    files = result["merged_challenge"]["generated_files"]
+    files = result["result"]["merged_challenge"]["generated_files"]
     compose_content = next(f["content"] for f in files if f["name"] == "docker-compose.yml")
     compose_data = yaml.safe_load(compose_content)
     
@@ -57,7 +57,7 @@ def test_merger_with_layout_plan():
     }
     
     result = run(params)
-    files = result["merged_challenge"]["generated_files"]
+    files = result["result"]["merged_challenge"]["generated_files"]
     compose_content = next(f["content"] for f in files if f["name"] == "docker-compose.yml")
     compose_data = yaml.safe_load(compose_content)
     
@@ -68,5 +68,25 @@ def test_merger_empty_components():
     """Verify error signal when no components are provided."""
     params = {"selected_components": []}
     result = run(params)
-    assert result["status"] == "error"
-    assert "No components selected" in result["message"]
+    assert result["status"] is False
+    assert "No components selected" in result["summary"]
+
+def test_merger_filename_collision():
+    """Verify that identical filenames in different components don't collide."""
+    params = {
+        "selected_components": [
+            {"name": "App A", "generated_files": [{"name": "app.py", "content": "print('A')"}]},
+            {"name": "App B", "generated_files": [{"name": "app.py", "content": "print('B')"}]}
+        ]
+    }
+    
+    result = run(params)
+    assert result["status"] is True
+    files = result["result"]["merged_challenge"]["generated_files"]
+    
+    # Both should exist in their own directories
+    assert any(f["name"] == "services/app_a/app.py" and f["content"] == "print('A')" for f in files)
+    assert any(f["name"] == "services/app_b/app.py" and f["content"] == "print('B')" for f in files)
+    
+    # Root index.html should also exist (landing page)
+    assert any(f["name"] == "index.html" for f in files)

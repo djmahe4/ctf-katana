@@ -1,12 +1,12 @@
 import os
 from pathlib import Path
-from ..base import ForensicsHandlerBase
-from ..models import ForensicsResult, ForensicsCategory, Severity
-from ..steganography.ip_fragmentation import IPFragmentationStego
-from ..steganography.tcp_options import TCPOptionsStego
-from ..steganography.icmp_timestamp import ICMPTimestampStego
-from ..steganography.dns_srv import DNSSRVStego
-from ..steganography.ether_mac import EtherMACStego
+from skills.forensics.base import ForensicsHandlerBase
+from skills.forensics.models import ForensicsResult, ForensicsCategory, Severity
+from skills.forensics.steganography.ip_fragmentation import IPFragmentationStego
+from skills.forensics.steganography.tcp_options import TCPOptionsStego
+from skills.forensics.steganography.icmp_timestamp import ICMPTimestampStego
+from skills.forensics.steganography.dns_srv import DNSSRVStego
+from skills.forensics.steganography.ether_mac import EtherMACStego
 
 class PcapHandler(ForensicsHandlerBase):
     """Handler for PCAP/PCAPNG network forensic analysis."""

@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from ..models import FuzzRunResult, FuzzCategory
+from skills.fuzzing.models import FuzzRunResult, FuzzCategory, FuzzerSeverity
 
 logger = logging.getLogger(__name__)
 

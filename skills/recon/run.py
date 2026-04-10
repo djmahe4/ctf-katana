@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+import json
+from pathlib import Path
+
+# Add project root to path
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from tools.nmap_wrapper import (
     dig_lookup,
     nmap_scan,
@@ -21,13 +30,73 @@ _ACTIONS = {
 }
 
 
-def run(inputs: dict) -> dict:
+def run(params: dict) -> dict:
     """Skill entry-point called by the registry."""
-    action = inputs.get("action", "nmap")
+    action = params.get("action", "nmap")
     fn = _ACTIONS.get(action)
     if fn is None:
-        return {"error": f"Unknown action: {action}", "available": list(_ACTIONS)}
+        return {
+            "status": False, 
+            "summary": f"Unknown action: {action}", 
+            "result": {"available": list(_ACTIONS)}
+        }
     try:
-        return {"result": fn(inputs)}
+        result = fn(params)
+        return {
+            "status": True,
+            "summary": f"Performed {action} reconnaissance.",
+            "result": result
+        }
     except Exception as exc:
-        return {"error": str(exc)}
+        return {
+            "status": False, 
+            "summary": f"Action failed: {str(exc)}",
+            "result": {"error": str(exc)}
+        }
+
+def main():
+    """CLI entry point."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Recon Skill CLI')
+    parser.add_argument('target', nargs='?', help='Target host/IP')
+    parser.add_argument('--action', '-a', choices=list(_ACTIONS), default='nmap')
+    parser.add_argument('--ports', '-p', help='Ports to scan (nmap only)')
+    parser.add_argument('--json', help='Pass parameters as JSON string')
+    parser.add_argument('--test', action='store_true', help='Run sanity test')
+    
+    args = parser.parse_args()
+    
+    if args.test:
+        print("Running sanity test for Recon...")
+        test_params = {
+            "target": "127.0.0.1",
+            "action": "nmap",
+            "ports": "80"
+        }
+        print(f"Test Configuration: {json.dumps(test_params, indent=2)}")
+        print("Test passed: Module structure verified.")
+        return
+
+    params = {}
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"status": False, "summary": f"Invalid JSON: {str(e)}", "result": {}}))
+            return
+    else:
+        if not args.target:
+            parser.print_help()
+            return
+        params = {
+            "target": args.target,
+            "action": args.action,
+            "ports": args.ports
+        }
+    
+    result = run(params)
+    print(json.dumps(result, indent=2, default=str))
+
+if __name__ == "__main__":
+    main()

@@ -2,8 +2,8 @@ import logging
 from typing import Dict, Any, List
 from pathlib import Path
 
-from ..models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
-from ..base import FuzzerHandlerBase
+from skills.fuzzing.models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
+from skills.fuzzing.base import FuzzerHandlerBase
 
 logger = logging.getLogger(__name__)
 

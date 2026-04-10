@@ -16,7 +16,7 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from skills.ctfd.api_client import CTFdAPIClient, CTFdChallenge, CTFdSubmission
+from skills.api_client import CTFdAPIClient, CTFdChallenge, CTFdSubmission
 
 
 class TestCTFdAPIClient:
@@ -25,7 +25,7 @@ class TestCTFdAPIClient:
     @pytest.fixture
     def mock_session(self):
         """Create mock requests session."""
-        with patch('skills.ctfd.api_client.requests.Session') as mock:
+        with patch('server.utils.ctfd_client.requests.Session') as mock:
             session = mock.return_value
             session.cookies = {'session': 'fake-session-id'}
             yield session
@@ -209,7 +209,7 @@ class TestCTFdSolveSkill:
     @pytest.fixture
     def mock_client(self):
         """Create mock CTFd client."""
-        with patch('skills.ctfd.solve.run.CTFdAPIClient') as mock:
+        with patch('skills.ctfd_solve.run.CTFdAPIClient') as mock:
             client = mock.return_value
             client.authenticated = True
             client.base_url = 'http://localhost:8000'
@@ -217,7 +217,7 @@ class TestCTFdSolveSkill:
     
     def test_solve_skill_list_mode(self, mock_client):
         """Test solve skill in list mode."""
-        from skills.ctfd.solve.run import run
+        from skills.ctfd_solve.run import run
         
         mock_client.list_challenges.return_value = [
             CTFdChallenge(id=1, name='Challenge 1', category='crypto', value=100,
@@ -235,7 +235,7 @@ class TestCTFdSolveSkill:
     
     def test_solve_skill_no_credentials(self):
         """Test solve skill without credentials."""
-        from skills.ctfd.solve.run import run
+        from skills.ctfd_solve.run import run
         
         result = run({
             'ctfd_url': 'http://localhost:8000'
@@ -250,9 +250,9 @@ class TestCTFdSetupSkill:
     
     def test_setup_quick_mode(self):
         """Test setup in quick mode."""
-        from skills.ctfd.setup.run import run
+        from skills.ctfd_setup.run import run
         
-        with patch('skills.ctfd.setup.run.CTFdSetup') as mock_setup:
+        with patch('skills.ctfd_setup.run.CTFdSetup') as mock_setup:
             mock_instance = mock_setup.return_value
             mock_instance.execute.return_value = {
                 'status': 'success',
@@ -277,14 +277,14 @@ class TestCTFdManageSkill:
     @pytest.fixture
     def mock_client(self):
         """Create mock CTFd client."""
-        with patch('skills.ctfd.manage.run.CTFdAPIClient') as mock:
+        with patch('skills.ctfd_manage.run.CTFdAPIClient') as mock:
             client = mock.return_value
             client.authenticated = True
             yield client
     
     def test_manage_get_scoreboard(self, mock_client):
         """Test getting scoreboard."""
-        from skills.ctfd.manage.run import run
+        from skills.ctfd_manage.run import run
         
         mock_client.get_scoreboard.return_value = [
             {'team': 'Team 1', 'score': 500},
@@ -303,7 +303,7 @@ class TestCTFdManageSkill:
     
     def test_manage_delete_without_confirm(self):
         """Test destructive action without confirmation."""
-        from skills.ctfd.manage.run import run
+        from skills.ctfd_manage.run import run
         
         result = run({
             'ctfd_url': 'http://localhost:8000',
@@ -317,7 +317,7 @@ class TestCTFdManageSkill:
     
     def test_manage_unknown_action(self, mock_client):
         """Test unknown management action."""
-        from skills.ctfd.manage.run import run
+        from skills.ctfd_manage.run import run
         
         result = run({
             'ctfd_url': 'http://localhost:8000',

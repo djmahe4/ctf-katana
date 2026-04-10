@@ -5,8 +5,8 @@ import subprocess
 import struct
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from ..models import VulnType, Severity, IoTFinding
-from ..base import IoTHandlerBase
+from skills.iot_embedded.models import VulnType, Severity, IoTFinding
+from skills.iot_embedded.base import IoTHandlerBase
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class BinaryHandler(IoTHandlerBase):
 
     def get_patterns(self) -> Dict[VulnType, List[Any]]:
         """Consolidates patterns from all binary vulnerability modules."""
-        from ..vulnerabilities.binary import (
+        from skills.iot_embedded.vulnerabilities.binary import (
             dangerous_functions, format_string, weak_crypto, hardcoded_addresses
         )
         return {

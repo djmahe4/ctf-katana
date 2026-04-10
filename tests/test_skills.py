@@ -97,12 +97,17 @@ class TestAtbash:
 class TestRunEntryPoint:
     def test_rot13_via_run(self):
         result = run({"action": "rot13", "text": "Hello"})
-        assert result == {"result": "Uryyb"}
+        assert result["status"] is True
+        assert result["result"] == "Uryyb"
+        assert "summary" in result
 
     def test_unknown_action(self):
         result = run({"action": "nonexistent"})
-        assert "error" in result
+        assert result["status"] is False
+        assert "summary" in result
 
     def test_caesar_via_run(self):
         result = run({"action": "caesar", "text": "abc", "shift": "3"})
-        assert result == {"result": "def"}
+        assert result["status"] is True
+        assert result["result"] == "def"
+        assert "summary" in result

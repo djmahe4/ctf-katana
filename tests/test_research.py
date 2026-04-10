@@ -187,7 +187,7 @@ class TestResearchAgent:
     
     def test_research_mode_enum(self):
         """Test ResearchMode enumeration."""
-        from skills.research.agent.run import ResearchMode
+        from skills.research_agent.run import ResearchMode
         
         assert ResearchMode.RESEARCH.value == "research"
         assert ResearchMode.HUNT.value == "hunt"
@@ -197,7 +197,7 @@ class TestResearchAgent:
     
     def test_research_depth_enum(self):
         """Test ResearchDepth enumeration."""
-        from skills.research.agent.run import ResearchDepth
+        from skills.research_agent.run import ResearchDepth
         
         assert ResearchDepth.QUICK.value == "quick"
         assert ResearchDepth.MEDIUM.value == "medium"
@@ -205,7 +205,7 @@ class TestResearchAgent:
     
     def test_finding_dataclass(self):
         """Test Finding dataclass creation."""
-        from skills.research.agent.run import Finding
+        from skills.research_agent.run import Finding
         
         finding = Finding(
             id="FINDING-001",
@@ -222,7 +222,7 @@ class TestResearchAgent:
     
     def test_research_result_dataclass(self):
         """Test ResearchResult dataclass creation."""
-        from skills.research.agent.run import ResearchResult
+        from skills.research_agent.run import ResearchResult
         
         result = ResearchResult(
             status="success",
@@ -234,10 +234,10 @@ class TestResearchAgent:
         assert result.status == "success"
         assert result.mode == "research"
     
-    @patch('skills.research.agent.run.KnowledgeBase')
+    @patch('skills.research_agent.run.KnowledgeBase')
     def test_research_agent_init(self, mock_kb):
         """Test ResearchAgent initialization."""
-        from skills.research.agent.run import ResearchAgent
+        from skills.research_agent.run import ResearchAgent
         
         agent = ResearchAgent()
         
@@ -245,11 +245,11 @@ class TestResearchAgent:
         assert "localhost:11434" in agent.ollama_host
         mock_kb.assert_called_once()
     
-    @patch('skills.research.agent.run.KnowledgeBase')
+    @patch('skills.research_agent.run.KnowledgeBase')
     @patch('requests.post')
     def test_research_agent_research(self, mock_requests, mock_kb):
         """Test research mode."""
-        from skills.research.agent.run import ResearchAgent, ResearchDepth
+        from skills.research_agent.run import ResearchAgent, ResearchDepth
         
         # Mock KB search
         mock_kb_instance = Mock()
@@ -273,21 +273,21 @@ class TestResearchAgent:
     
     def test_run_function_missing_topic(self):
         """Test run() with missing topic."""
-        from skills.research.agent.run import run
+        from skills.research_agent.run import run
         
         result = run({'mode': 'research'})
         
-        assert result['status'] == 'error'
+        assert result['status'] is False
         assert 'topic' in result['message'].lower()
     
     def test_run_function_invalid_mode(self):
         """Test run() with invalid mode."""
-        from skills.research.agent.run import run
+        from skills.research_agent.run import run
         
-        with patch('skills.research.agent.run.KnowledgeBase'):
+        with patch('skills.research_agent.run.KnowledgeBase'):
             result = run({'mode': 'invalid_mode', 'topic': 'test'})
         
-        assert result['status'] == 'error'
+        assert result['status'] is False
         assert 'valid_modes' in result
 
 
@@ -300,7 +300,7 @@ class TestResearchSwarm:
     
     def test_swarm_type_enum(self):
         """Test SwarmType enumeration."""
-        from skills.research.swarm.run import SwarmType
+        from skills.research_swarm.run import SwarmType
         
         assert SwarmType.RECON.value == "recon"
         assert SwarmType.ANALYSIS.value == "analysis"
@@ -310,7 +310,7 @@ class TestResearchSwarm:
     
     def test_agent_type_enum(self):
         """Test AgentType enumeration."""
-        from skills.research.swarm.run import AgentType
+        from skills.research_swarm.run import AgentType
         
         assert AgentType.URL_SCOUT.value == "url_scout"
         assert AgentType.CODE_REVIEWER.value == "code_reviewer"
@@ -318,7 +318,7 @@ class TestResearchSwarm:
     
     def test_agent_task_dataclass(self):
         """Test AgentTask dataclass."""
-        from skills.research.swarm.run import AgentTask
+        from skills.research_swarm.run import AgentTask
         
         task = AgentTask(
             agent_type="code_reviewer",
@@ -331,7 +331,7 @@ class TestResearchSwarm:
     
     def test_agent_result_dataclass(self):
         """Test AgentResult dataclass."""
-        from skills.research.swarm.run import AgentResult
+        from skills.research_swarm.run import AgentResult
         
         result = AgentResult(
             agent_type="url_scout",
@@ -345,7 +345,7 @@ class TestResearchSwarm:
     
     def test_swarm_composition(self):
         """Test swarm composition mapping."""
-        from skills.research.swarm.run import SwarmAgent, SwarmType, AgentType
+        from skills.research_swarm.run import SwarmAgent, SwarmType, AgentType
         
         balanced_agents = SwarmAgent.SWARM_COMPOSITION[SwarmType.BALANCED]
         
@@ -353,10 +353,10 @@ class TestResearchSwarm:
         assert AgentType.URL_SCOUT in balanced_agents
         assert AgentType.CODE_REVIEWER in balanced_agents
     
-    @patch('skills.research.swarm.run.KnowledgeBase')
+    @patch('skills.research_swarm.run.KnowledgeBase')
     def test_research_swarm_init(self, mock_kb):
         """Test ResearchSwarm initialization."""
-        from skills.research.swarm.run import ResearchSwarm
+        from skills.research_swarm.run import ResearchSwarm
         
         swarm = ResearchSwarm()
         
@@ -365,11 +365,11 @@ class TestResearchSwarm:
     
     def test_run_function_missing_topic(self):
         """Test run() with missing topic."""
-        from skills.research.swarm.run import run
+        from skills.research_swarm.run import run
         
         result = run({})
         
-        assert result['status'] == 'error'
+        assert result['status'] is False
         assert 'topic' in result['message'].lower()
 
 
@@ -382,7 +382,7 @@ class TestVulnDiscovery:
     
     def test_target_type_enum(self):
         """Test TargetType enumeration."""
-        from skills.research.vuln_discovery.run import TargetType
+        from skills.research_vuln_discovery.run import TargetType
         
         assert TargetType.AUTO.value == "auto"
         assert TargetType.CODE.value == "code"
@@ -390,7 +390,7 @@ class TestVulnDiscovery:
     
     def test_severity_enum(self):
         """Test Severity enumeration."""
-        from skills.research.vuln_discovery.run import Severity
+        from skills.research_vuln_discovery.run import Severity
         
         assert Severity.CRITICAL.value == "CRITICAL"
         assert Severity.HIGH.value == "HIGH"
@@ -398,7 +398,7 @@ class TestVulnDiscovery:
     
     def test_vuln_classes_mapping(self):
         """Test vulnerability classes mapping."""
-        from skills.research.vuln_discovery.run import VULN_CLASSES, Severity
+        from skills.research_vuln_discovery.run import VULN_CLASSES, Severity
         
         sqli = VULN_CLASSES['sqli']
         assert sqli['cwe'] == "CWE-89"
@@ -409,7 +409,7 @@ class TestVulnDiscovery:
     
     def test_vulnerability_dataclass(self):
         """Test Vulnerability dataclass."""
-        from skills.research.vuln_discovery.run import Vulnerability
+        from skills.research_vuln_discovery.run import Vulnerability
         
         vuln = Vulnerability(
             id="VULN-001",
@@ -424,30 +424,30 @@ class TestVulnDiscovery:
         assert vuln.id == "VULN-001"
         assert vuln.cvss == 9.8
     
-    @patch('skills.research.vuln_discovery.run.KnowledgeBase')
+    @patch('skills.research_vuln_discovery.run.KnowledgeBase')
     def test_vuln_discovery_init(self, mock_kb):
         """Test VulnDiscoveryEngine initialization."""
-        from skills.research.vuln_discovery.run import VulnDiscoveryEngine
+        from skills.research_vuln_discovery.run import VulnDiscoveryEngine
         
         engine = VulnDiscoveryEngine()
         
         assert engine.ollama_model == "mistral-nemo"
         mock_kb.assert_called_once()
     
-    @patch('skills.research.vuln_discovery.run.KnowledgeBase')
+    @patch('skills.research_vuln_discovery.run.KnowledgeBase')
     def test_detect_target_type_url(self, mock_kb):
         """Test target type detection for URLs."""
-        from skills.research.vuln_discovery.run import VulnDiscoveryEngine, TargetType
+        from skills.research_vuln_discovery.run import VulnDiscoveryEngine, TargetType
         
         engine = VulnDiscoveryEngine()
         
         result = engine._detect_target_type("https://example.com")
         assert result == TargetType.WEB
     
-    @patch('skills.research.vuln_discovery.run.KnowledgeBase')
+    @patch('skills.research_vuln_discovery.run.KnowledgeBase')
     def test_detect_target_type_repo(self, mock_kb):
         """Test target type detection for repos."""
-        from skills.research.vuln_discovery.run import VulnDiscoveryEngine, TargetType
+        from skills.research_vuln_discovery.run import VulnDiscoveryEngine, TargetType
         
         engine = VulnDiscoveryEngine()
         
@@ -459,10 +459,10 @@ class TestVulnDiscovery:
         result2 = engine._detect_target_type("https://github.com/test/repo")
         assert result2 == TargetType.REPO
     
-    @patch('skills.research.vuln_discovery.run.KnowledgeBase')
+    @patch('skills.research_vuln_discovery.run.KnowledgeBase')
     def test_static_analysis_patterns(self, mock_kb):
         """Test static analysis pattern matching."""
-        from skills.research.vuln_discovery.run import CODE_PATTERNS
+        from skills.research_vuln_discovery.run import CODE_PATTERNS
         import re
         
         # Test SQL injection pattern
@@ -474,11 +474,11 @@ class TestVulnDiscovery:
     
     def test_run_function_missing_target(self):
         """Test run() with missing target."""
-        from skills.research.vuln_discovery.run import run
+        from skills.research_vuln_discovery.run import run
         
         result = run({})
         
-        assert result['status'] == 'error'
+        assert result['status'] is False
         assert 'target' in result['message'].lower()
 
 
@@ -491,7 +491,7 @@ class TestChallengeGenerator:
     
     def test_difficulty_enum(self):
         """Test Difficulty enumeration."""
-        from skills.research.challenge_gen.run import Difficulty
+        from skills.research_challenge_gen.run import Difficulty
         
         assert Difficulty.EASY.value == "easy"
         assert Difficulty.MEDIUM.value == "medium"
@@ -500,7 +500,7 @@ class TestChallengeGenerator:
     
     def test_category_enum(self):
         """Test Category enumeration."""
-        from skills.research.challenge_gen.run import Category
+        from skills.research_challenge_gen.run import Category
         
         assert Category.WEB.value == "web"
         assert Category.PWN.value == "pwn"
@@ -508,7 +508,7 @@ class TestChallengeGenerator:
     
     def test_ai_hardening_enum(self):
         """Test AIHardening enumeration."""
-        from skills.research.challenge_gen.run import AIHardening
+        from skills.research_challenge_gen.run import AIHardening
         
         assert AIHardening.NONE.value == "none"
         assert AIHardening.STANDARD.value == "standard"
@@ -516,7 +516,7 @@ class TestChallengeGenerator:
     
     def test_difficulty_points_mapping(self):
         """Test difficulty to points mapping."""
-        from skills.research.challenge_gen.run import DIFFICULTY_POINTS, Difficulty
+        from skills.research_challenge_gen.run import DIFFICULTY_POINTS, Difficulty
         
         easy_range = DIFFICULTY_POINTS[Difficulty.EASY]
         assert easy_range == (100, 200)
@@ -526,7 +526,7 @@ class TestChallengeGenerator:
     
     def test_challenge_templates(self):
         """Test challenge templates exist."""
-        from skills.research.challenge_gen.run import CHALLENGE_TEMPLATES, Category
+        from skills.research_challenge_gen.run import CHALLENGE_TEMPLATES, Category
         
         assert 'sqli' in CHALLENGE_TEMPLATES
         assert 'xss' in CHALLENGE_TEMPLATES
@@ -538,7 +538,7 @@ class TestChallengeGenerator:
     
     def test_challenge_hint_dataclass(self):
         """Test ChallengeHint dataclass."""
-        from skills.research.challenge_gen.run import ChallengeHint
+        from skills.research_challenge_gen.run import ChallengeHint
         
         hint = ChallengeHint(cost=50, text="Look at the input")
         
@@ -547,7 +547,7 @@ class TestChallengeGenerator:
     
     def test_ctf_challenge_dataclass(self):
         """Test CTFChallenge dataclass."""
-        from skills.research.challenge_gen.run import CTFChallenge
+        from skills.research_challenge_gen.run import CTFChallenge
         
         challenge = CTFChallenge(
             id="chal-001",
@@ -565,7 +565,7 @@ class TestChallengeGenerator:
     
     def test_challenge_generator_init(self):
         """Test ChallengeGenerator initialization."""
-        from skills.research.challenge_gen.run import ChallengeGenerator
+        from skills.research_challenge_gen.run import ChallengeGenerator
         
         gen = ChallengeGenerator()
         
@@ -573,7 +573,7 @@ class TestChallengeGenerator:
     
     def test_generate_flag(self):
         """Test flag generation."""
-        from skills.research.challenge_gen.run import ChallengeGenerator, AIHardening
+        from skills.research_challenge_gen.run import ChallengeGenerator, AIHardening
         
         gen = ChallengeGenerator()
         
@@ -585,7 +585,7 @@ class TestChallengeGenerator:
     
     def test_generate_flag_aggressive_hardening(self):
         """Test flag generation with aggressive hardening."""
-        from skills.research.challenge_gen.run import ChallengeGenerator, AIHardening
+        from skills.research_challenge_gen.run import ChallengeGenerator, AIHardening
         
         gen = ChallengeGenerator()
         
@@ -595,7 +595,7 @@ class TestChallengeGenerator:
     
     def test_generate_hints(self):
         """Test hint generation."""
-        from skills.research.challenge_gen.run import ChallengeGenerator, Difficulty
+        from skills.research_challenge_gen.run import ChallengeGenerator, Difficulty
         
         gen = ChallengeGenerator()
         
@@ -606,18 +606,18 @@ class TestChallengeGenerator:
     
     def test_run_function_missing_params(self):
         """Test run() with missing parameters."""
-        from skills.research.challenge_gen.run import run
+        from skills.research_challenge_gen.run import run
         
         result = run({})
         
-        assert result['status'] == 'error'
+        assert result['status'] is False
         assert 'finding' in result['message'].lower() or 'vuln_type' in result['message'].lower()
     
     def test_run_function_with_vuln_type(self):
         """Test run() with vuln_type parameter."""
-        from skills.research.challenge_gen.run import run
+        from skills.research_challenge_gen.run import run
         
-        with patch('skills.research.challenge_gen.run.ChallengeGenerator._query_llm') as mock_llm:
+        with patch('skills.research_challenge_gen.run.ChallengeGenerator._query_llm') as mock_llm:
             mock_llm.return_value = ""
             
             result = run({
@@ -625,7 +625,7 @@ class TestChallengeGenerator:
                 'difficulty': 'easy',
             })
         
-        assert result['status'] == 'success'
+        assert result['status'] is True
         assert 'challenge' in result
         assert result['challenge']['category'] == 'web'
 

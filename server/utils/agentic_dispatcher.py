@@ -264,7 +264,7 @@ class AgenticSkillDispatcher:
             return skill_fn(params)
         except Exception as e:
             logger.error(f"Execution failed for skill: {e}")
-            return {"status": "error", "message": str(e)}
+            return {"status": False, "summary": str(e), "result": {"error": str(e)}}
 
     async def _read_skill_prompt(self, skill_name: str) -> str:
         """Helper to read the prompt.md from a local skill directory."""
@@ -337,4 +337,4 @@ class AgenticSkillDispatcher:
         except Exception as e:
             logger.error(f"Adversarial planning failed: {e}")
             
-        return {"status": "failed", "injections": []}
+        return {"status": False, "injections": []}

@@ -52,7 +52,7 @@ katana-server = "server.mcp_server:main"
 purple-engine = "cli.main:main"
 
 [tool.setuptools.packages.find]
-include = ["server*", "agents*", "tools*", "context*"]
+include = ["server*", "agents*", "tools*", "context*", "skills*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

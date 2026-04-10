@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 
-from .models import ReverseRunResult, ReverseMode, ReverseFinding, ReverseSeverity
+from skills.reverse.models import ReverseRunResult, ReverseMode, ReverseFinding, ReverseSeverity
 
 logger = logging.getLogger(__name__)
 

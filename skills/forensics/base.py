@@ -3,7 +3,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from .models import ForensicsFinding, ForensicsResult, ForensicsCategory, Severity
+from skills.forensics.models import ForensicsFinding, ForensicsResult, ForensicsCategory, Severity
 
 class ForensicsHandlerBase(ABC):
     """Abstract base class for forensic specialized handlers."""

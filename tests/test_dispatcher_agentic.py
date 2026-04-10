@@ -73,6 +73,6 @@ async def test_ollama_failure_fallback(dispatcher):
         with patch("httpx.AsyncClient", return_value=mock_client):
             strategy = await dispatcher._plan_adversarial_strategy("prompt", "files", 0.5)
             
-            assert strategy["status"] == "failed"
+            assert strategy["status"] is False
             assert "injections" in strategy
             assert len(strategy["injections"]) == 0

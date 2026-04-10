@@ -7,19 +7,25 @@ Analyze → Search KB → Plan → Execute → Interpret → Report
 Integrates CTFd API for challenge enumeration, artifact download, and flag submission.
 """
 
-import json
-import os
 import sys
+import os
+import json
+import logging
+import argparse
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-import logging
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to sys.path for standalone execution
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# Import CTFd API client
-from api_client import CTFdAPIClient, CTFdChallenge, CTFdSubmission
+# Import CTFd API client from the bridge
+try:
+    from skills.api_client import CTFdAPIClient, CTFdChallenge, CTFdSubmission
+except ImportError:
+    from api_client import CTFdAPIClient, CTFdChallenge, CTFdSubmission
 
 # Import Katana agents (will be available when run in Katana environment)
 try:
@@ -406,35 +412,35 @@ class CTFdSolver:
         }
 
 
-def run(inputs: Dict[str, Any]) -> Dict[str, Any]:
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main entry point for the ctfd_solve skill.
     
     Args:
-        inputs: Dictionary with parameters from skill.yaml
+        params: Dictionary with parameters from skill.yaml
         
     Returns:
-        Dictionary with solve results
+        Dictionary with status, summary, and result
     """
     # Extract parameters
-    ctfd_url = inputs.get('ctfd_url')
-    username = inputs.get('username')
-    password = inputs.get('password')
-    api_token = inputs.get('api_token')
-    challenge_id = inputs.get('challenge_id')
-    challenge_name = inputs.get('challenge_name')
-    category = inputs.get('category')
-    auto_submit = inputs.get('auto_submit', True)
-    generate_writeup = inputs.get('generate_writeup', True)
-    output_dir = inputs.get('output_dir', './ctfd_output')
-    max_retries = inputs.get('max_retries', 3)
+    ctfd_url = params.get('ctfd_url')
+    username = params.get('username')
+    password = params.get('password')
+    api_token = params.get('api_token')
+    challenge_id = params.get('challenge_id')
+    challenge_name = params.get('challenge_name')
+    category = params.get('category')
+    auto_submit = params.get('auto_submit', True)
+    generate_writeup = params.get('generate_writeup', True)
+    output_dir = params.get('output_dir', './ctfd_output')
+    max_retries = params.get('max_retries', 3)
     
     # Validate inputs
     if not ctfd_url:
-        return {'status': 'error', 'message': 'ctfd_url is required'}
+        return {'status': False, 'summary': 'ctfd_url is required', 'result': {}}
     
     if not (api_token or (username and password)):
-        return {'status': 'error', 'message': 'Must provide api_token or username+password'}
+        return {'status': False, 'summary': 'Must provide api_token or username+password', 'result': {}}
     
     try:
         # Initialize solver
@@ -453,41 +459,95 @@ def run(inputs: Dict[str, Any]) -> Dict[str, Any]:
         if not challenge_id and not challenge_name:
             challenges = solver.list_challenges(category=category)
             return {
-                'status': 'success',
-                'mode': 'list',
-                'challenges': challenges,
-                'total_challenges': len(challenges)
+                'status': True,
+                'summary': f"Listed {len(challenges)} challenges",
+                'result': {
+                    'mode': 'list',
+                    'challenges': challenges,
+                    'total_challenges': len(challenges)
+                }
             }
         
         # SOLVE MODE: Specific challenge
         result = solver.solve_challenge(challenge_id=challenge_id, challenge_name=challenge_name)
-        summary = solver.get_summary()
+        summary_data = solver.get_summary()
         
+        # Enforce error status if solve failed
+        status = True
+        if result.get('status') == 'failed' or 'error' in result:
+             status = False
+             summary = result.get('error', 'Solve failed')
+        else:
+             summary = f"Attempted challenge: {challenge_name or challenge_id}"
+
         return {
-            'status': 'success',
-            'mode': 'solve',
-            'result': result,
-            'summary': summary
+            'status': status,
+            'summary': summary,
+            'result': {
+                'mode': 'solve',
+                'solve_result': result,
+                'overall_summary': summary_data
+            }
         }
         
     except Exception as e:
         logger.error(f"CTFd solve skill error: {e}", exc_info=True)
         return {
-            'status': 'error',
-            'message': str(e)
+            'status': False,
+            'summary': f"Error during CTFd solve: {str(e)}",
+            'result': {}
         }
 
 
-if __name__ == '__main__':
-    # Example usage for testing
-    logging.basicConfig(level=logging.INFO)
+def main():
+    parser = argparse.ArgumentParser(description='CTFd Solve Skill')
+    parser.add_argument('--json', help='JSON Parameters')
+    parser.add_argument('--test', action='store_true', help='Run sanity check')
     
-    test_inputs = {
-        'ctfd_url': 'http://localhost:8000',
-        'username': 'admin',
-        'password': 'admin',
-        'category': 'crypto'
-    }
+    # Legacy CLI arguments
+    parser.add_argument('--ctfd_url', help='CTFd instance URL')
+    parser.add_argument('--api_token', help='CTFd API token')
+    parser.add_argument('--username', help='CTFd username')
+    parser.add_argument('--password', help='CTFd password')
+    parser.add_argument('--challenge_id', type=int, help='Challenge ID to solve')
+    parser.add_argument('--challenge_name', help='Challenge name to solve')
+    parser.add_argument('--category', help='Filter challenges by category')
     
-    result = run(test_inputs)
+    args = parser.parse_args()
+    
+    if args.test:
+        print("Running sanity check for ctfd_solve...")
+        try:
+            # Basic validation: try to import the API client
+            try:
+                from skills.api_client import CTFdAPIClient
+            except ImportError:
+                from api_client import CTFdAPIClient
+            print("✓ Successfully imported CTFdAPIClient")
+            print("✓ Sanity check passed.")
+            sys.exit(0)
+        except Exception as e:
+            print(f"✗ Sanity check failed: {e}")
+            sys.exit(1)
+
+    if args.json:
+        # If --json is provided as a string, it contains the full params
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError:
+            # Fallback for when --json was used as a flag in some versions
+            params = vars(args)
+    else:
+        params = vars(args)
+        # Remove internal arg labels
+        params.pop('json', None)
+        params.pop('test', None)
+        # Remove None values
+        params = {k: v for k, v in params.items() if v is not None}
+        
+    # Standardize result output
+    result = run(params)
     print(json.dumps(result, indent=2))
+
+if __name__ == '__main__':
+    main()

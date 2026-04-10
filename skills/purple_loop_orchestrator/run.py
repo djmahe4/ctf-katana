@@ -20,45 +20,66 @@ logger = logging.getLogger(__name__)
 async def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Stateful execution of the Purple Loop.
+    
+    Returns:
+        Dictionary with status, summary, and result
     """
     target = params.get('target')
+    if not target:
+        return {
+            "status": "error", 
+            "message": "Target (CVE-ID or URL) is required",
+            "summary": "Failed to start Purple Loop: Missing target"
+        }
+        
     reset = params.get('reset', False)
     interactive = params.get('interactive', True)
     
-    # 1. Initialize Memory & State
-    # We use a subfolder for each target to avoid state collisions
-    target_slug = "".join(c if c.isalnum() else "_" for c in target)
-    state_file = f"data/sessions/{target_slug}/state.json"
-    
-    if reset and os.path.exists(os.path.join(PROJECT_ROOT, state_file)):
-        logger.info(f"♻️ Resetting session for {target}...")
-        os.remove(os.path.join(PROJECT_ROOT, state_file))
-        
-    memory = PipelineMemory(workspace_root=str(PROJECT_ROOT), state_file=state_file)
-    reviewer = ReviewManager(workspace_root=str(PROJECT_ROOT))
-    registry = KnowledgeRegistry(workspace_root=PROJECT_ROOT)
-    
-    # 2. Instantiate and Run Conductor
-    conductor = PipelineConductor(
-        target=target,
-        memory=memory,
-        reviewer=reviewer,
-        knowledge_registry=registry,
-        workspace_root=str(PROJECT_ROOT),
-        interactive=interactive
-    )
-    
     try:
+        # 1. Initialize Memory & State
+        # We use a subfolder for each target to avoid state collisions
+        target_slug = "".join(c if c.isalnum() else "_" for c in target)
+        state_file = f"data/sessions/{target_slug}/state.json"
+        
+        if reset and os.path.exists(os.path.join(PROJECT_ROOT, state_file)):
+            logger.info(f"♻️ Resetting session for {target}...")
+            os.remove(os.path.join(PROJECT_ROOT, state_file))
+            
+        memory = PipelineMemory(workspace_root=str(PROJECT_ROOT), state_file=state_file)
+        reviewer = ReviewManager(workspace_root=str(PROJECT_ROOT))
+        registry = KnowledgeRegistry(workspace_root=PROJECT_ROOT)
+        
+        # 2. Instantiate and Run Conductor
+        conductor = PipelineConductor(
+            target=target,
+            memory=memory,
+            reviewer=reviewer,
+            knowledge_registry=registry,
+            workspace_root=str(PROJECT_ROOT),
+            interactive=interactive
+        )
+        
         await conductor.run_pipeline()
+        
+        result_data = {
+            "session_id": memory.state.get("session_id"),
+            "last_step": memory.state.get("last_step"),
+            "export_path": memory.get_context("export_path"),
+            "metrics": memory.get_context("metrics", {})
+        }
+        
         return {
             "status": "success",
-            "session_id": memory.state["session_id"],
-            "last_step": memory.state["last_step"],
-            "export_path": memory.get_context("export_path")
+            "summary": f"Purple Loop completed for {target} (Session: {result_data['session_id']})",
+            "result": result_data
         }
     except Exception as e:
         logger.error(f"Execution failed: {e}")
-        return {"status": "error", "message": str(e)}
+        return {
+            "status": "error", 
+            "message": str(e),
+            "summary": f"Purple Loop failed for {target}: {str(e)}"
+        }
 
 async def main():
     parser = argparse.ArgumentParser(description="Purple Engine - Stateful Orchestrator")

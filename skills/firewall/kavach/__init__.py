@@ -16,19 +16,19 @@ Architecture:
 - AuditLedger: Cryptographic immutable log of all security events
 """
 
-from .core import (
+from skills.firewall.kavach.core import (
     KavachWrapper,
     PhantomWorkspace,
     SecurityPolicy,
     AuditLedger,
     PIISanitizer,
 )
-from .monitor import (
+from skills.firewall.kavach.monitor import (
     AutoEnforcer,
     TripwireMonitor,
     FileWatcher,
 )
-from .exceptions import (
+from skills.firewall.kavach.exceptions import (
     KavachSecurityViolation,
     PhantomWorkspaceError,
     PIIDetectionError,

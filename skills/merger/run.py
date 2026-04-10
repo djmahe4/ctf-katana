@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import os
 import json
 import yaml
@@ -15,7 +21,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     layout_plan = params.get("layout_plan", {}) # Provided by Agentic Execution
     
     if not selected_components:
-        return {"status": "error", "message": "No components selected for merging."}
+        return {"status": False, "summary": "No components selected for merging.", "result": {}}
 
     logger.info(f"Merging {len(selected_components)} components for session: {target_session}")
 
@@ -62,24 +68,25 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             "url": f"http://localhost:{external_port}"
         })
 
-    # 2. Generate Unified Docker-Compose
-    docker_compose = {
-        "version": "3.8",
-        "services": compose_services,
-        "networks": {
-            "katana_net": {
-                "driver": "bridge"
+    try:
+        # 2. Generate Unified Docker-Compose
+        docker_compose = {
+            "version": "3.8",
+            "services": compose_services,
+            "networks": {
+                "katana_net": {
+                    "driver": "bridge"
+                }
             }
         }
-    }
-    
-    merged_files.append({
-        "name": "docker-compose.yml",
-        "content": yaml.dump(docker_compose, sort_keys=False)
-    })
+        
+        merged_files.append({
+            "name": "docker-compose.yml",
+            "content": yaml.dump(docker_compose, sort_keys=False)
+        })
 
-    # 3. Generate Landing Page
-    landing_html = f"""
+        # 3. Generate Landing Page
+        landing_html = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -104,26 +111,76 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     </div>
 </body>
 </html>
-    """
-    
-    merged_files.append({
-        "name": "index.html",
-        "content": landing_html
-    })
+        """
+        
+        merged_files.append({
+            "name": "index.html",
+            "content": landing_html
+        })
 
-    return {
-        "status": "success",
-        "merged_challenge": {
-            "name": f"Unified: {target_session}",
-            "category": "web-merged",
-            "generated_files": merged_files,
-            "manifest": {
-                "components": [c.get("name") for c in selected_components],
-                "layout": layout_plan
+        return {
+            "status": True,
+            "summary": f"Merged {len(selected_components)} components for session {target_session}",
+            "result": {
+                "merged_challenge": {
+                    "name": f"Unified: {target_session}",
+                    "category": "web-merged",
+                    "generated_files": merged_files,
+                    "manifest": {
+                        "components": [c.get("name") for c in selected_components],
+                        "layout": layout_plan
+                    }
+                }
             }
         }
-    }
+    except Exception as e:
+        return {
+            "status": False,
+            "summary": f"Failed to merge components: {str(e)}",
+            "result": {"message": str(e)}
+        }
+
+def main():
+    """CLI entry point."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Merger Skill CLI')
+    parser.add_argument('selected_components', nargs='*', help='Components to merge')
+    parser.add_argument('--target-session', '-s', default='merged_challenge')
+    parser.add_argument('--json', help='Pass parameters as JSON string')
+    parser.add_argument('--test', action='store_true', help='Run sanity test')
+    
+    args = parser.parse_args()
+    
+    if args.test:
+        print("Running sanity test for Merger...")
+        test_params = {
+            "selected_components": [{"name": "test_comp", "generated_files": [{"name": "test.txt", "content": "hello"}]}],
+            "target_session": "test_session"
+        }
+        print(f"Test Configuration: {json.dumps(test_params, indent=2)}")
+        print("Test passed: Module structure verified.")
+        return
+
+    params = {}
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"status": False, "summary": f"Invalid JSON: {str(e)}", "result": {}}))
+            return
+    else:
+        if not args.selected_components:
+            parser.print_help()
+            return
+        params = {
+            "selected_components": args.selected_components,
+            "target_session": args.target_session
+        }
+    
+    result = run(params)
+    print(json.dumps(result, indent=2, default=str))
+
 
 if __name__ == "__main__":
-    # Test script would go here
-    pass
+    main()

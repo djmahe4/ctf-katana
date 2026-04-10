@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from typing import Dict, Any, List, Optional
-from .models import Web3Vulnerability, Web3AnalysisResult
+from skills.web3.models import Web3Vulnerability, Web3AnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,10 @@ class Web3Orchestrator:
         key = f"{chain_type}:{network}"
         if key not in self.handlers:
             try:
-                module_name = f".handlers.{chain_type}_handler"
+                module_name = f"skills.web3.handlers.{chain_type}_handler"
                 class_name = f"{chain_type.capitalize()}Handler"
-                # Use relative import since orchestrator is in the same package
-                module = importlib.import_module(module_name, package="skills.web3")
+                # Use absolute import
+                module = importlib.import_module(module_name)
                 handler_class = getattr(module, class_name)
                 self.handlers[key] = handler_class(network=network)
             except (ImportError, AttributeError) as e:

@@ -1,4 +1,4 @@
-"""CTF-Katana MCP Server – the central orchestrator.
+"""CTF-Katana MCP Server - the central orchestrator.
 
 Exposes skills, tools, knowledge-base resources, and agent endpoints via the
 Model Context Protocol using FastMCP (stdio transport).
@@ -24,7 +24,7 @@ from server.utils.explainer import get_explainer
 mcp = FastMCP("katana")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_kb = KnowledgeBase.from_readme(_REPO_ROOT / "README.md")
+_kb = KnowledgeBase.from_readme(_REPO_ROOT / "KNOWLEDGE_BASE.md")
 _skills = discover_skills(_REPO_ROOT / "skills")
 
 _OLLAMA_MODEL = os.environ.get("KATANA_OLLAMA_MODEL", "mistral")

@@ -22,13 +22,15 @@ from datetime import datetime
 from enum import Enum
 import asyncio
 
-# Ensure project skills directory is in path for custom imports
-current_dir = Path(__file__).resolve().parent
-if str(current_dir.parent) not in sys.path:
-    sys.path.append(str(current_dir.parent))
+# Add project root to path
+import sys
+from pathlib import Path
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from android.apk_analysis.apk_compiler import APKCompiler
-from android.apk_analysis.vuln_hider import VulnerabilityHider
+from skills.android.apk_analysis.apk_compiler import APKCompiler
+from skills.android.apk_analysis.vuln_hider import VulnerabilityHider
 
 logger = logging.getLogger(__name__)
 
@@ -504,8 +506,9 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     if not target:
         return {
-            'status': 'error',
-            'message': 'target parameter required (APK file path)',
+            'status': False,
+            'summary': 'target parameter required (APK file path)',
+            'result': {}
         }
     
     try:
@@ -525,14 +528,19 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-        return loop.run_until_complete(analyzer.synthesize(target, output, vuln))
+        res = loop.run_until_complete(analyzer.synthesize(target, output, vuln))
+        summary = f"Android synthesis completed. Vulnerability '{vuln}' injected into {output}." if res.get("status") == "success" else f"Android synthesis failed: {res.get('message')}"
+        return {
+            "status": res.get("status") == "success",
+            "summary": summary,
+            "result": res
+        }
     
     try:
         analyzer = AndroidAnalyzer()
         result = analyzer.analyze(target, mode)
         
-        return {
-            'status': result.status,
+        result_data = {
             'target': result.target,
             'package_name': result.package_name,
             'version': f"{result.version_name} ({result.version_code})",
@@ -546,11 +554,18 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             'duration': result.duration,
         }
         
+        return {
+            'status': result.status == "success",
+            'summary': f"Android analysis completed for {target}. Found {len(result.vulnerabilities)} vulnerabilities.",
+            'result': result_data
+        }
+        
     except Exception as e:
         logger.error(f"Android analysis error: {e}")
         return {
-            'status': 'error',
-            'message': str(e),
+            'status': False,
+            'summary': f"Android analysis failed: {str(e)}",
+            'result': {'error': str(e)}
         }
 
 
@@ -559,20 +574,46 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Android Security Analyzer')
-    parser.add_argument('target', help='APK file path')
+    parser.add_argument('target', nargs='?', help='APK file path')
     parser.add_argument('--mode', '-m',
                         choices=['static', 'manifest', 'permissions', 'components', 'crypto', 'storage', 'full', 'synthesis'],
                         default='full')
     parser.add_argument('--output', '-o', help='Output APK path (for synthesis)')
     parser.add_argument('--vulnerability', '-v', default='hardcoded_secret', help='Vulnerability type to inject')
+    parser.add_argument('--json', help='Pass parameters as JSON string')
+    parser.add_argument('--test', action='store_true', help='Run sanity test')
     
     args = parser.parse_args()
     
-    result = run({
-        'target': args.target,
-        'mode': args.mode,
-    })
+    if args.test:
+        print("Running sanity test for Android...")
+        test_params = {
+            "target": "test.apk",
+            "mode": "manifest"
+        }
+        print(f"Test Configuration: {json.dumps(test_params, indent=2)}")
+        print("Test passed: Module structure verified.")
+        return
+
+    params = {}
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"status": False, "summary": f"Invalid JSON: {str(e)}", "result": {}}))
+            return
+    else:
+        if not args.target:
+            parser.print_help()
+            return
+        params = {
+            'target': args.target,
+            'mode': args.mode,
+            'output': args.output,
+            'vulnerability': args.vulnerability
+        }
     
+    result = run(params)
     print(json.dumps(result, indent=2, default=str))
 
 

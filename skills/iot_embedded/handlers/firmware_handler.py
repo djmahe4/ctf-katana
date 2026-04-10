@@ -3,8 +3,8 @@ import re
 import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from ..models import VulnType, Severity, IoTFinding, ExtractedFile
-from ..base import IoTHandlerBase
+from skills.iot_embedded.models import VulnType, Severity, IoTFinding, ExtractedFile
+from skills.iot_embedded.base import IoTHandlerBase
 
 logger = logging.getLogger(__name__)
 

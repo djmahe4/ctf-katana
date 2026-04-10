@@ -168,11 +168,23 @@ _CATEGORY_MAP: dict[str, str] = {
     "steganography": "stego",
     "miscellaneous": "misc",
     "vulns": "web",
+    "adversarial-ai": "adversarial-ai",
+    "threat-intelligence": "threat-intelligence",
+    "cloud security": "cloud-security",
+    "blockchain": "blockchain-security",
 }
 
 def category_for(title: str) -> str:
-    """Return the canonical category for a section *title* (Lite)."""
     t = title.strip().lower()
+    # Check for specific CTF categories first
+    if "cryp" in t: return "crypto"
+    if "web" in t: return "web"
+    if "rev" in t: return "reversing"
+    if "pwn" in t or "exploit" in t: return "pwn"
+    if "foren" in t: return "forensics"
+    if "steg" in t: return "stego"
+    if "recon" in t or "enum" in t: return "recon"
+    
     for key, cat in _CATEGORY_MAP.items():
         if key in t: return cat
     return "misc"
@@ -230,33 +242,73 @@ class KnowledgeBase:
 
     @classmethod
     def from_readme(cls, path: Optional[str | Path] = None) -> "KnowledgeBase":
+        """Factory to create KB from a README or KNOWLEDGE_BASE.md (Markdown parser)."""
         if path is None:
             path = Path(__file__).resolve().parent.parent / "KNOWLEDGE_BASE.md"
         path = Path(path)
         if not path.exists(): path = path.parent / "README.md"
-        if not path.exists(): return cls(sections=[])
-
-        text = path.read_text(encoding="utf-8")
-        headers = []
-        for m in re.finditer(r"^(#{1,6})\s+(.+)$", text, re.MULTILINE):
-            headers.append((m.start(), m.group(2).strip()))
         
+        if not path.exists(): return cls(sections=[])
+        
+        text = path.read_text(encoding="utf-8")
+        
+        # Enhanced parsing to support ATX (#) and Setext (===/---) headers
+        lines = text.splitlines()
+        headers = []
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # ATX Header
+            atx_match = re.match(r"^(#{1,6})\s+(.+)$", line)
+            
+            # Setext Header (requires non-empty line followed by underline)
+            next_line = lines[i+1] if i + 1 < len(lines) else ""
+            setext_h1 = re.match(r"^={3,}$", next_line)
+            setext_h2 = re.match(r"^-{3,}$", next_line)
+            
+            if atx_match:
+                title = atx_match.group(2).strip()
+                headers.append((i, title, False))
+            elif (setext_h1 or setext_h2) and line.strip():
+                title = line.strip()
+                headers.append((i, title, True))
+                i += 1 # Skip underline
+            i += 1
+            
         sections = []
-        for i, (pos, title) in enumerate(headers):
-            if title.lower() in {"ctf-katana", "table of contents", "quick start"}: continue
-            header_end = text.find("\n", pos) + 1
-            next_pos = headers[i + 1][0] if i + 1 < len(headers) else len(text)
-            body = text[header_end:next_pos].strip()
+        for j, (line_idx, title, is_setext) in enumerate(headers):
+            if title.lower() in {"ctf-katana", "table of contents", "quick start", "katana"}: continue
+            
+            # Find content start and end
+            content_start_line = line_idx + (2 if is_setext else 1)
+            next_header_line = headers[j+1][0] if j + 1 < len(headers) else len(lines)
+            
+            body = "\n".join(lines[content_start_line:next_header_line]).strip()
+            
+            # Simple entry parsing (look for bullet points)
             entries = []
-            for part in re.split(r"(?m)^\*\s+", body):
-                part = part.strip()
-                if not part: continue
-                lines = part.split("\n", 1)
-                name = re.sub(r"\[([^\]]*)\]", r"\1", lines[0]).strip("`").rstrip(":")
-                desc = " ".join([l.strip() for l in lines[1].split("\n") if l.strip()])[:500] if len(lines) > 1 else ""
-                cmds = [m.group(1).strip() for m in re.finditer(r"```[^\n]*\n(.*?)```", part, re.DOTALL)]
-                entries.append(KnowledgeEntry(name=name, description=desc, commands=cmds))
-            sections.append(KnowledgeSection(title=title, entries=entries, raw_text=body, category=category_for(title)))
+            if body:
+                for part in re.split(r"(?m)^\*\s+", body):
+                    part = part.strip()
+                    if not part: continue
+                    plines = part.split("\n", 1)
+                    name_raw = plines[0].strip()
+                    name = re.sub(r"\[([^\]]*)\]", r"\1", name_raw).strip("`").rstrip(":")
+                    if not name: continue
+                    
+                    desc = " ".join([l.strip() for l in plines[1].split("\n") if l.strip()])[:500] if len(plines) > 1 else ""
+                    cmds = [m.group(1).strip() for m in re.finditer(r"```[^\n]*\n(.*?)```", part, re.DOTALL)]
+                    urls = re.findall(r"https?://[^\s\)\`\]]+", part)
+                    
+                    entries.append(KnowledgeEntry(name=name, description=desc, commands=cmds, urls=urls))
+                
+            sections.append(KnowledgeSection(
+                title=title,
+                category=category_for(title),
+                entries=entries,
+                raw_text=body
+            ))
         
         return cls(sections=sections)
 
@@ -274,7 +326,7 @@ class KnowledgeBase:
 
     def summary(self) -> str:
         v_count = self._collection.count() if self.has_vector_db else 0
-        return f"Purple Engine KB: {len(self.sections)} categories, {v_count} vector chunks."
+        return f"Purple Engine Knowledge Base: {len(self.sections)} categories, {v_count} vector chunks."
 
     def list_sections(self) -> List[str]:
         return [s.title for s in self.sections]
@@ -327,6 +379,10 @@ class KnowledgeBase:
             except Exception as e:
                 logger.error(f"Vector search failed: {e}")
 
+        # Filter by threshold
+        self._MIN_RELEVANCE = 0.5
+        results = [r for r in results if r.relevance >= self._MIN_RELEVANCE]
+
         # Lite search fallback/augmentation
         q = query.lower()
         if not source_type or source_type == "manual":
@@ -339,9 +395,16 @@ class KnowledgeBase:
                         ))
         
         # Deduplicate and sort
+        # Result thresholding
+        filtered = [r for r in sorted(results, key=lambda x: x.relevance, reverse=True) if r.relevance >= self._MIN_RELEVANCE]
+        
+        if not filtered:
+            return []
+            
+        # Deduplicate
         seen = set()
         unique = []
-        for r in sorted(results, key=lambda x: x.relevance, reverse=True):
+        for r in filtered:
             if r.title not in seen:
                 seen.add(r.title)
                 unique.append(r)

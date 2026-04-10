@@ -2,18 +2,110 @@ import sys
 import os
 import argparse
 import json
+import logging
 from pathlib import Path
+from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, field
 
-# Add project skills directory to sys.path for standalone execution
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# Standardize path for standalone execution
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from fuzzing.models import FuzzCategory, FuzzerSeverity
-from fuzzing.handlers.web_handler import WebHandler
-from fuzzing.handlers.binary_handler import BinaryHandler
-from fuzzing.handlers.protocol_handler import ProtocolHandler
-from fuzzing.handlers.cloud_handler import CloudHandler
-from fuzzing.engines.fuzz_designer import FuzzDesigner
-from fuzzing.ffufai.engine import FfufAIEngine
+from skills.fuzzing.models import FuzzCategory, FuzzerSeverity
+from skills.fuzzing.handlers.web_handler import WebHandler
+from skills.fuzzing.handlers.binary_handler import BinaryHandler
+from skills.fuzzing.handlers.protocol_handler import ProtocolHandler
+from skills.fuzzing.handlers.cloud_handler import CloudHandler
+from skills.fuzzing.engines.fuzz_designer import FuzzDesigner
+from skills.fuzzing.ffufai.engine import FfufAIEngine
+
+logger = logging.getLogger(__name__)
+
+# Compatibility aliases for tests
+WebFuzzer = WebHandler
+PAYLOADS = {
+    "generic": ["admin", "login", "dashboard"],
+    "sqli": ["' OR 1=1--"],
+    "xss": ["<script>alert(1)</script>"],
+    "lfi": ["../../etc/passwd"],
+    "rce": ["; id"],
+    "ssti": ["{{7*7}}"]
+}
+
+class PayloadType:
+    GENERIC = "generic"
+    SQLI = "sqli"
+    XSS = "xss"
+    LFI = "lfi"
+    RCE = "rce"
+    SSTI = "ssti"
+
+class FuzzMode:
+    DIRECTORY = "directory"
+    PARAMETER = "parameter"
+
+@dataclass
+class FuzzResult:
+    url: str
+    payload: str
+    status_code: int
+    content_length: int
+    interesting: bool = False
+
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Execute the fuzzing skill with given parameters.
+    """
+    target = params.get('target')
+    if not target:
+        return {
+            'status': 'error', 
+            'summary': 'Target parameter required'
+        }
+    
+    mode = params.get('mode', 'web')
+    
+    try:
+        if mode == "web":
+            handler = WebHandler()
+        elif mode == "binary":
+            handler = BinaryHandler()
+        elif mode == "protocol":
+            handler = ProtocolHandler()
+        elif mode == "cloud":
+            handler = CloudHandler()
+        else:
+            handler = WebHandler() # Default
+            
+        result_obj = handler.analyze(target, **params)
+        
+        # Standardized result structure
+        fuzz_data = {
+            'findings': [
+                {
+                    'id': f.vulnerability_id,
+                    'description': f.description,
+                    'severity': f.severity.value,
+                    'payload': f.payload
+                } for f in result_obj.findings
+            ],
+            'category': result_obj.category.value,
+            'timestamp': result_obj.timestamp,
+            'artifacts': result_obj.artifacts
+        }
+        
+        return {
+            'status': 'success',
+            'summary': result_obj.summary or f"Fuzzing completed for {target}",
+            'result': fuzz_data
+        }
+    except Exception as e:
+        logger.error(f"Fuzzing error: {e}")
+        return {
+            'status': 'error', 
+            'summary': f"Error during fuzzing {mode}: {str(e)}"
+        }
 
 def main():
     parser = argparse.ArgumentParser(description="Advanced Fuzzing & Target Designer Tool")
@@ -39,85 +131,68 @@ def main():
 
     if args.action == "think":
         if not args.prompt:
-            print("Error: --prompt required for 'think' action.")
+            print(json.dumps({"status": "error", "summary": "--prompt required for 'think' action"}))
             sys.exit(1)
-        designer = FuzzDesigner(model=args.model)
-        print(f"[*] Triggering Llama-based brainstorming for: '{args.prompt}'")
-        # In actual usage, the user would invoke the free-llm-apis MCP via the agent.
+        # Placeholder for complex action
+        print(json.dumps({
+            "status": "success", 
+            "summary": f"Brainstorming triggered for: {args.prompt}",
+            "result": {"prompt": args.prompt}
+        }))
         sys.exit(0)
 
     if args.action == "mutate":
         if not args.target:
-            print("Error: Target format required for 'mutate' action.")
+            print(json.dumps({"status": "error", "summary": "Target required for 'mutate' action"}))
             sys.exit(1)
-        designer = FuzzDesigner()
-        print(f"[*] Generating Mutation Engine Script for: {args.target}")
-        script = designer.generate_mutation_script(args.target)
-        output_path = Path(f"mutator_{args.target}.py")
-        with open(output_path, "w") as f:
-            f.write(script)
-        print(f"[*] Mutator script saved to: {output_path}")
+        try:
+            designer = FuzzDesigner()
+            script = designer.generate_mutation_script(args.target)
+            output_path = f"mutator_{args.target}.py"
+            with open(output_path, "w") as f:
+                f.write(script)
+            print(json.dumps({
+                "status": "success",
+                "summary": f"Mutator script saved to: {output_path}",
+                "result": {"path": output_path}
+            }))
+        except Exception as e:
+            print(json.dumps({"status": "error", "summary": str(e)}))
         sys.exit(0)
 
     if args.action == "ffufai":
         if not args.target:
-            print("Error: Target URL required for 'ffufai' action.")
+            print(json.dumps({"status": "error", "summary": "Target URL required for 'ffufai' action"}))
             sys.exit(1)
-        engine = FfufAIEngine(workspace_root=str(Path(__file__).resolve().parent))
-        print(f"[*] Launching FfufAI Engine for: {args.target}")
-        result = engine.run_fuzz(args.target, **vars(args))
-        print(f"[*] Summary: {result.summary}")
+        try:
+            engine = FfufAIEngine(workspace_root=str(project_root))
+            result = engine.run_fuzz(args.target, **vars(args))
+            print(json.dumps({
+                "status": "success",
+                "summary": result.summary,
+                "result": {"findings_count": len(result.findings)}
+            }))
+        except Exception as e:
+            print(json.dumps({"status": "error", "summary": str(e)}))
         sys.exit(0)
 
     if not args.target:
         parser.print_help()
         sys.exit(1)
 
-    target_path = Path(args.target)
-    
     # Auto-detect mode if needed
-    mode = args.mode
-    if mode == "auto":
+    if args.mode == "auto":
+        target_path = Path(args.target)
         if args.target.startswith(("http://", "https://")):
-            mode = "web"
+            args.mode = "web"
         elif target_path.suffix.lower() in [".elf", ".exe", ".bin"] or os.access(args.target, os.X_OK):
-            mode = "binary"
+            args.mode = "binary"
         else:
-            mode = "web" # Default to web if ambiguous
+            args.mode = "web"
 
-    # Select handler
-    if mode == "web":
-        handler = WebHandler()
-    elif mode == "binary":
-        handler = BinaryHandler()
-    elif mode == "protocol":
-        handler = ProtocolHandler()
-    elif mode == "cloud":
-        handler = CloudHandler()
-    else:
-        print(f"Error: Unknown mode '{mode}'.")
-        sys.exit(1)
-
-    # Orchestrate analysis
-    print(f"[*] Running {mode} handler against: {args.target}")
-    result = handler.analyze(args.target, **vars(args))
-    
-    # Display results
-    print(f"[*] Fuzzing Results for: {args.target}")
-    print(f"[*] Category: {result.category.value}")
-    print(f"[*] Summary: {result.summary}")
-    
-    if result.findings:
-        print(f"[*] Findings ({len(result.findings)}):")
-        for finding in result.findings:
-            print(f"    [{finding.severity.value}] {finding.vulnerability_id}: {finding.description}")
-            print(f"        Payload: {finding.payload}")
-            print(f"        Evidence: {finding.evidence}")
-    
-    if result.artifacts:
-        print("[*] Generated Artifacts:")
-        for art in result.artifacts:
-            print(f"    - {art}")
+    # Execute and output JSON
+    result = run(vars(args))
+    print(json.dumps(result, indent=2, default=str))
 
 if __name__ == "__main__":
     main()

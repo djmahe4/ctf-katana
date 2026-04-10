@@ -2,8 +2,8 @@ import logging
 import os
 from typing import Dict, Any, List
 
-from ..models import ReverseRunResult, ReverseMode, ReverseFinding, ReverseSeverity, ChallengeSpec
-from ..base import ReverseHandlerBase
+from skills.reverse.models import ReverseRunResult, ReverseMode, ReverseFinding, ReverseSeverity, ChallengeSpec
+from skills.reverse.base import ReverseHandlerBase
 
 logger = logging.getLogger(__name__)
 

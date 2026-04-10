@@ -3,7 +3,10 @@ import argparse
 import sys
 import json
 from typing import Dict, Any, Optional
-from .orchestrator import Web3Orchestrator
+from pathlib import Path
+
+# Fix imports to use absolute paths from project root
+from skills.web3.orchestrator import Web3Orchestrator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -33,24 +36,40 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         orchestrator = Web3Orchestrator()
-        result = orchestrator.analyze({
+        analysis_result = orchestrator.analyze({
             "target": target,
             "chain_type": chain_type,
             "network": network,
             "mode": mode
         })
         
-        # Result is already a dict from orchestrator
-        return result
+        if analysis_result.get("status") == "error":
+            return {
+                "status": "error",
+                "summary": f"Web3 analysis failed for {target}: {analysis_result.get('message')}",
+                "result": analysis_result
+            }
+
+        return {
+            "status": "success",
+            "summary": f"Web3 analysis completed for {target} ({chain_type}/{network})",
+            "result": analysis_result
+        }
         
     except Exception as e:
         logger.error(f"Web3 analysis error: {e}", exc_info=True)
         return {
             'status': 'error',
-            'message': str(e)
+            'summary': f"Web3 analysis exception: {str(e)}",
+            'result': {'error_detail': str(e)}
         }
 
 if __name__ == "__main__":
+    # Add project root to sys.path for standalone execution
+    root_path = str(Path(__file__).resolve().parent.parent.parent)
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+
     parser = argparse.ArgumentParser(description="Web3 Vulnerability Analyzer")
     parser.add_argument("target", help="Path to contract, address, or repository")
     parser.add_argument("--chain", default="ethereum", help="Blockchain type (ethereum, solana, algorand)")
@@ -71,9 +90,11 @@ if __name__ == "__main__":
     
     if args.json:
         print(json.dumps(result, indent=2))
+        sys.exit(0 if result['status'] == 'success' else 1)
+
+    if result.get("status") == "success":
+        res_data = result.get("result", {})
+        print(res_data.get("report", "Analysis completed successfully (no report)."))
     else:
-        if result.get("status") == "success":
-            print(result.get("report", "Analysis completed successfully (no report)."))
-        else:
-            print(f"Error: {result.get('message', 'Unknown error')}")
-            sys.exit(1)
+        print(f"Error: {result.get('summary', 'Unknown error')}")
+        sys.exit(1)

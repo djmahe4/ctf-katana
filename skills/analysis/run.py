@@ -1,12 +1,18 @@
-"""Analysis skill – inspect challenge artifacts."""
-
-from __future__ import annotations
-
-import re
+import sys
+import os
 from pathlib import Path
+from typing import Dict, Any
 
-from tools import detect_file_type, hex_dump, read_text_safe
-
+# Absolute import from root if needed, or relative if it was packaged.
+# Since 'tools' is at root, we'll keep it as is but add standalone support.
+try:
+    from tools import detect_file_type, hex_dump, read_text_safe
+except ImportError:
+    # Manual path fix for standalone
+    project_root = Path(__file__).resolve().parent.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    from tools import detect_file_type, hex_dump, read_text_safe
 
 def analyze_file(path: str) -> dict:
     """Analyze a file and return a structured summary."""
@@ -31,10 +37,10 @@ def analyze_file(path: str) -> dict:
 
     return info
 
-
 def identify_encoding(data: str) -> list[str]:
     """Guess possible encodings present in *data*."""
     guesses: list[str] = []
+    import re # Ensure re is imported
     if re.fullmatch(r"[A-Za-z0-9+/=\s]+", data):
         guesses.append("base64")
     if re.fullmatch(r"[0-9a-fA-F\s]+", data):
@@ -49,14 +55,38 @@ def identify_encoding(data: str) -> list[str]:
         guesses.append("url_encoded")
     return guesses
 
-
-def run(inputs: dict) -> dict:
+def run(params: dict) -> dict:
     """Skill entry-point called by the registry."""
-    path = inputs.get("path", "")
-    data = inputs.get("data", "")
+    path = params.get("path", "")
+    data = params.get("data", "")
 
-    if path:
-        return analyze_file(path)
-    if data:
-        return {"encodings": identify_encoding(data)}
-    return {"error": "Provide 'path' or 'data' in inputs."}
+    try:
+        if path:
+            result = analyze_file(path)
+            if "error" in result:
+                return {"status": "error", "summary": result["error"]}
+            return {
+                "status": "success",
+                "summary": f"Analyzed file: {path}",
+                "result": result
+            }
+        if data:
+            result = identify_encoding(data)
+            return {
+                "status": "success",
+                "summary": "Identified possible encodings in data.",
+                "result": result
+            }
+        return {
+            "status": "error",
+            "summary": "Provide 'path' or 'data' in params."
+        }
+    except Exception as exc:
+        return {"status": "error", "summary": str(exc)}
+
+if __name__ == "__main__":
+    # Example standalone usage
+    if len(sys.argv) > 1:
+        print(run({"path": sys.argv[1]}))
+    else:
+        print("Usage: python run.py <filepath>")

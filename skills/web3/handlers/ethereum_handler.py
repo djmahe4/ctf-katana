@@ -2,8 +2,8 @@ import os
 import importlib
 import logging
 from typing import Dict, List, Any
-from ..base import Web3HandlerBase
-from ..models import VulnType
+from skills.web3.base import Web3HandlerBase
+from skills.web3.models import VulnType
 
 logger = logging.getLogger(__name__)
 

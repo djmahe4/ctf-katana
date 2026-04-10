@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import os
 import json
 import random
@@ -43,7 +49,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     chaos_level = params.get("chaos_level", 0.5)
     
     if not challenge:
-        return {"status": "error", "message": "No challenge data provided."}
+        return {"status": False, "summary": "No challenge data provided.", "result": {}}
 
     logger.info(f"😈 Applying Superpowers strategy. Chaos: {chaos_level}")
     
@@ -83,22 +89,62 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         "strategy_applied": strategy.get("name", "Unknown-Loki")
     }
 
+    summary = f"Applied strategy '{strategy.get('name', 'Unknown')}' with chaos level {chaos_level}."
+    
     return {
-        "status": "success",
-        "challenge": challenge
+        "status": True,
+        "summary": summary,
+        "result": {
+            "challenge": challenge
+        }
     }
 
+def main():
+    """CLI entry point."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Superpowers Skill CLI')
+    parser.add_argument('--json', help='Pass parameters as JSON string')
+    parser.add_argument('--test', action='store_true', help='Run sanity test')
+    
+    args = parser.parse_args()
+    
+    if args.test:
+        print("Running sanity test for Superpowers...")
+        test_params = {
+            "challenge": {
+                "name": "Test",
+                "generated_files": [{"name": "app.py", "content": "print('hello')"}]
+            },
+            "strategy": {
+                "name": "Loki-Trial",
+                "injections": [{"file": "app.py", "type": "trap", "content": "exploit"}]
+            },
+            "chaos_level": 0.8
+        }
+        print(f"Test Configuration: {json.dumps(test_params, indent=2)}")
+        result = run(test_params)
+        if result["status"]:
+            print("Test passed: Module structure verified.")
+        else:
+            print(f"Test failed: {result.get('summary')}")
+        return
+
+    params = {}
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"status": False, "summary": f"Invalid JSON: {str(e)}", "result": {}}))
+            return
+    else:
+        # Default behavior if no JSON provided
+        parser.print_help()
+        return
+    
+    result = run(params)
+    print(json.dumps(result, indent=2, default=str))
+
+
 if __name__ == "__main__":
-    # Test stub
-    test_params = {
-        "challenge": {
-            "name": "Test",
-            "generated_files": [{"name": "app.py", "content": "print('hello')"}]
-        },
-        "strategy": {
-            "name": "Loki-Trial",
-            "injections": [{"file": "app.py", "type": "trap", "content": "exploit"}]
-        },
-        "chaos_level": 0.8
-    }
-    print(json.dumps(run(test_params), indent=2))
+    main()

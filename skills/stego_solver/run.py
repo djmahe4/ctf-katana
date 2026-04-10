@@ -1,6 +1,10 @@
-"""Stego-solver skill – steganographic extraction from media files."""
+import sys
+from pathlib import Path
 
-from __future__ import annotations
+# Fix path for standalone execution
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from tools.strings_runner import run_strings
 from tools.exiftool_runner import run_exiftool
@@ -16,14 +20,28 @@ _ACTIONS = {
     "zsteg": lambda i: run_zsteg(i["path"]),
 }
 
-
-def run(inputs: dict) -> dict:
+def run(params: dict) -> dict:
     """Skill entry-point called by the registry."""
-    action = inputs.get("action", "")
+    action = params.get("action", "")
     fn = _ACTIONS.get(action)
     if fn is None:
-        return {"error": f"Unknown action: {action}", "available": list(_ACTIONS)}
+        return {
+            "status": "error",
+            "summary": f"Unknown action: {action}",
+            "result": {"available": list(_ACTIONS)}
+        }
     try:
-        return {"result": fn(inputs)}
+        result = fn(params)
+        return {
+            "status": "success",
+            "summary": f"Executed {action} stego analysis.",
+            "result": result
+        }
     except Exception as exc:
-        return {"error": str(exc)}
+        return {"status": "error", "summary": str(exc)}
+
+if __name__ == "__main__":
+    if len(sys.argv) > 2:
+        print(run({"action": sys.argv[1], "path": sys.argv[2]}))
+    else:
+        print("Usage: python run.py <action> <filepath>")

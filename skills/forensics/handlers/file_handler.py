@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
-from ..base import ForensicsHandlerBase
-from ..models import ForensicsResult, ForensicsCategory, Severity
+from skills.forensics.models import ForensicsFinding, ForensicsResult, ForensicsCategory, Severity
+from skills.forensics.base import ForensicsHandlerBase
 # Import existing tools if they exist
 # from tools.detect_file_type import detect_file_type
 # from tools.foremost_runner import run_foremost

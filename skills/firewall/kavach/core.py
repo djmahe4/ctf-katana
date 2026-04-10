@@ -23,12 +23,12 @@ from datetime import datetime
 from contextlib import contextmanager
 import logging
 
-from .exceptions import (
+from skills.firewall.kavach.exceptions import (
     PhantomWorkspaceError,
     PIIDetectionError,
     FileAccessViolation,
 )
-from .monitor import TripwireMonitor, AutoEnforcer
+from skills.firewall.kavach.monitor import TripwireMonitor, AutoEnforcer
 
 logger = logging.getLogger(__name__)
 

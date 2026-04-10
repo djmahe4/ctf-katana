@@ -1,0 +1,17 @@
+name: ctftime
+description: "Wrapper for the official CTFTime API to fetch upcoming events and research past writeups."
+inputs:
+  action:
+    type: string
+    required: false
+    default: "upcoming"
+    enum: ["upcoming", "writeups"]
+  limit:
+    type: integer
+    required: false
+    default: 5
+  event_name:
+    type: string
+    required: false
+tools: []
+category: research

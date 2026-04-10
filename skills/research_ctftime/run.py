@@ -1,7 +1,14 @@
+import sys
 import requests
 import json
 import logging
+from pathlib import Path
 from typing import Dict, Any, List
+
+# Add project root to path
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 logger = logging.getLogger("ctf_katana.skills.research_ctftime")
 
@@ -70,22 +77,74 @@ class ResearchCTFTime:
             logger.error(f"Failed to search for event writeups: {e}")
             return []
 
-def run(action: str, **kwargs) -> Dict[str, Any]:
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """Unified entry point for the skill registry."""
-    api = ResearchCTFTime()
+    try:
+        api = ResearchCTFTime()
+        action = params.get("action", "upcoming")
+        
+        if action == "upcoming":
+            limit = int(params.get("limit", 5))
+            data = api.get_upcoming_ctfs(limit=limit)
+            return {
+                "status": True, 
+                "summary": f"Fetched {len(data)} upcoming CTFs.",
+                "result": {"events": data}
+            }
+        elif action == "writeups":
+            event = params.get("event_name", "")
+            results = api.search_past_writeups(event_name=event)
+            return {
+                "status": True, 
+                "summary": f"Found {len(results)} events for writeup research.",
+                "result": {"events": results}
+            }
+        else:
+            return {
+                "status": False, 
+                "summary": f"Unknown action: {action}",
+                "result": {"error": f"Unknown action: {action}"}
+            }
+    except Exception as e:
+        logger.error(f"CTFTime error: {e}")
+        return {
+            "status": False, 
+            "summary": f"CTFTime error: {str(e)}",
+            "result": {"error": str(e)}
+        }
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="CTFTime Research CLI")
+    parser.add_argument("--action", choices=["upcoming", "writeups"], default="upcoming")
+    parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument("--event-name", help="Event name for writeup search")
+    parser.add_argument("--json", help="Pass parameters as JSON string")
+    parser.add_argument("--test", action="store_true", help="Run sanity test")
     
-    if action == "upcoming":
-        limit = kwargs.get("limit", 5)
-        return {"status": "success", "data": api.get_upcoming_ctfs(limit=limit)}
-    elif action == "writeups":
-        event = kwargs.get("event_name", "")
-        return {"status": "success", "data": api.search_past_writeups(event_name=event)}
+    args = parser.parse_args()
+
+    if args.test:
+        print("[*] Testing CTFTime API Upcoming Events...")
+        result = run({"action": "upcoming", "limit": 2})
+        print(json.dumps(result, indent=2))
+        return
+
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError:
+            print(json.dumps({"status": False, "summary": "Invalid JSON input", "result": {}}))
+            return
     else:
-        return {"status": "error", "message": f"Unknown action: {action}"}
+        params = {
+            "action": args.action,
+            "limit": args.limit,
+            "event_name": args.event_name
+        }
+
+    result = run(params)
+    print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
-    # Test execution
-    print("[*] Testing CTFTime API Upcoming Events...")
-    api = ResearchCTFTime()
-    results = api.get_upcoming_ctfs(limit=2)
-    print(json.dumps(results, indent=2))
+    main()

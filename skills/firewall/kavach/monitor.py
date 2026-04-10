@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from .exceptions import (
+from skills.firewall.kavach.exceptions import (
     ExecutionTimeoutError,
     TripwireTriggered,
     LoopDetectionError,

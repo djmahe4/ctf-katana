@@ -46,8 +46,8 @@ def test_superpowers_run_injections():
     }
     
     result = run(params)
-    assert result["status"] == "success"
-    server_py = result["challenge"]["generated_files"][0]
+    assert result["status"] is True
+    server_py = result["result"]["challenge"]["generated_files"][0]
     assert "[AI_GUARD_REF]" in server_py["content"]
     assert "import flask" in server_py["content"]
 
@@ -67,7 +67,8 @@ def test_superpowers_chaos_mode():
     }
     
     result = run(params)
-    app_js = result["challenge"]["generated_files"][0]
+    assert result["status"] is True
+    app_js = result["result"]["challenge"]["generated_files"][0]
     # Chaos mode adds a red herring
     assert app_js["content"] != "console.log('init')"
     # Since it's web, it should have a web herring
@@ -78,4 +79,4 @@ def test_superpowers_missing_challenge():
     """Verify error handling when challenge is missing."""
     params = {"challenge": None}
     result = run(params)
-    assert result["status"] == "error"
+    assert result["status"] is False

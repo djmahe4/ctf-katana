@@ -14,8 +14,9 @@ class TestRegistry:
         skills = discover_skills(SKILLS_DIR)
         expected = {
             "analysis", "crypto_solver", "stego_solver", "forensics",
-            "web_exploit", "reverse_engineering", "binary_exploit",
+            "web", "reverse_engineering", "binary_exploit",
             "recon", "exploit_gen", "writeup_generator",
+            "ctftime", "chrome-scraper", "research-agent", "challenge-gen",
         }
         assert expected.issubset(skills.keys())
 

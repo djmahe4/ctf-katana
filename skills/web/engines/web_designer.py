@@ -1,5 +1,5 @@
 import logging
-from ..models import WebRunResult, WebCategory, WebFinding, WebSeverity
+from skills.web.models import WebRunResult, WebCategory, WebFinding, WebSeverity
 
 logger = logging.getLogger(__name__)
 

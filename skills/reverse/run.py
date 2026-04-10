@@ -3,14 +3,68 @@ import os
 import argparse
 import logging
 from pathlib import Path
+from typing import Dict, Any, List, Optional
 
-# Add project skills directory to sys.path for standalone execution
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# Standardize path for standalone execution
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from reverse.models import ReverseMode, ReverseSeverity
-from reverse.handlers.logic_handler import LogicHandler
-from reverse.handlers.synthesis_handler import SynthesisHandler
-from reverse.engines.re_designer import REDesigner
+try:
+    from skills.reverse.models import ReverseMode, ReverseSeverity
+    from skills.reverse.handlers.logic_handler import LogicHandler
+    from skills.reverse.handlers.synthesis_handler import SynthesisHandler
+    from skills.reverse.engines.re_designer import REDesigner
+except ImportError:
+    # Fallback for different execution contexts
+    from .models import ReverseMode, ReverseSeverity
+    from .handlers.logic_handler import LogicHandler
+    from .handlers.synthesis_handler import SynthesisHandler
+    from .engines.re_designer import REDesigner
+
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute the reverse skill with given parameters."""
+    target = params.get('target') or params.get('snippet')
+    if not target:
+        return {'status': 'error', 'summary': 'Target or snippet required'}
+    
+    mode_str = params.get('mode', 'synergy')
+    action = params.get('action', 'analyze')
+    
+    try:
+        mode = ReverseMode(mode_str)
+        logic_handler = LogicHandler()
+        synthesis_handler = SynthesisHandler()
+        
+        if action == "analyze":
+            result = logic_handler.run(target, mode, **params)
+        elif action == "create":
+            result = synthesis_handler.run(target, mode, **params)
+        else:
+            return {'status': 'error', 'summary': f'Unknown action {action}'}
+            
+        return {
+            'status': 'success',
+            'summary': result.summary,
+            'result': {
+                'findings': [
+                    {
+                        'id': f.finder_id,
+                        'description': f.description,
+                        'severity': f.severity.value,
+                        'flag': getattr(f, 'extracted_flag', None),
+                        'pattern': getattr(f, 'logic_pattern', None)
+                    } for f in result.findings
+                ],
+                'artifacts': result.artifacts,
+                'mode': mode.value
+            }
+        }
+    except Exception as e:
+        return {
+            'status': 'error', 
+            'summary': f"Reverse analysis failed: {str(e)}"
+        }
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("skills.reverse.run")

@@ -36,7 +36,7 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 
 def main():
-    from skills.research.knowledge_base import KnowledgeBase, RepoConfig
+    from context.knowledge_base import KnowledgeBase, RepoConfig
     
     print("=" * 70)
     print("PURPLE ENGINE KNOWLEDGE BASE SYNC")

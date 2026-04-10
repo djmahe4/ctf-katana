@@ -10,12 +10,20 @@ import sys
 import json
 import argparse
 from pathlib import Path
+from typing import Dict, List, Any, Optional
 
-# Add the parent directory to sys.path to allow imports from skills.firewall
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root to sys.path for standalone execution
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from firewall.kavach import KavachWrapper, SecurityPolicy, PIISanitizer, PhantomWorkspace
-from firewall.kavach.scaffolder import DefenseScaffolder
+# Standardized imports with fallback
+try:
+    from skills.firewall.kavach import KavachWrapper, SecurityPolicy, PIISanitizer, PhantomWorkspace
+    from skills.firewall.kavach.scaffolder import DefenseScaffolder
+except ImportError:
+    from kavach import KavachWrapper, SecurityPolicy, PIISanitizer, PhantomWorkspace
+    from kavach.scaffolder import DefenseScaffolder
 
 def run_containment(skill_name, profile_name="standard"):
     """
@@ -93,23 +101,93 @@ def run_scaffold(server_type, output_dir, challenge_name="challenge"):
     
     return artifacts
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Registry entry-point for the firewall skill.
+    
+    Args:
+        params: Dictionary with parameters from skill.yaml
+        
+    Returns:
+        Dictionary with status, summary, and result
+    """
+    mode = params.get("mode", "audit")
+    try:
+        if mode in ["containment", "shield"]:
+            result = run_containment(params.get("skill_name", "generic_task"), params.get("profile", "standard"))
+        elif mode == "audit":
+            result = run_network_audit(params.get("target_config") or params.get("target"))
+        elif mode == "bypass_test":
+            result = run_bypass_test(params.get("target"))
+        elif mode == "scaffold":
+            result = run_scaffold(
+                params.get("server_type", "nginx"), 
+                params.get("output", "output/shielding")
+            )
+        else:
+            return {
+                "status": False, 
+                "summary": f"Failed to execute firewall skill: Unknown mode {mode}",
+                "result": {"error": f"Unknown mode: {mode}"}
+            }
+            
+        return {
+            "status": True,
+            "summary": f"Firewall action '{mode}' completed",
+            "result": result
+        }
+        
+    except Exception as e:
+        return {
+            "status": False,
+            "summary": f"Error during firewall {mode}: {str(e)}",
+            "result": {"error": str(e)}
+        }
+
+def main():
+    parser = argparse.ArgumentParser(description='Firewall Skill')
+    parser.add_argument('--json', help='JSON Parameters')
+    parser.add_argument('--test', action='store_true', help='Run sanity check')
+    
+    # Legacy CLI arguments
     parser.add_argument("--mode", default="audit", choices=["audit", "containment", "bypass_test", "scaffold", "shield"])
     parser.add_argument("--profile", default="standard")
     parser.add_argument("--target", help="IP or config file path")
     parser.add_argument("--skill_name", default="generic_task")
     parser.add_argument("--server-type", choices=["nginx", "tomcat", "uvicorn"], default="nginx")
     parser.add_argument("--output", "-o", default="output/shielding")
+    
     args = parser.parse_args()
     
-    if args.mode == "containment" or args.mode == "shield":
-        result = run_containment(args.skill_name, args.profile)
-    elif args.mode == "audit":
-        result = run_network_audit(args.target)
-    elif args.mode == "bypass_test":
-        result = run_bypass_test(args.target)
-    elif args.mode == "scaffold":
-        result = run_scaffold(args.server_type, args.output)
+    if args.test:
+        print("Running sanity check for firewall...")
+        try:
+            try:
+                from skills.firewall.kavach import KavachWrapper
+            except ImportError:
+                from kavach import KavachWrapper
+            print("✓ Successfully imported KavachWrapper")
+            print("✓ Sanity check passed.")
+            sys.exit(0)
+        except Exception as e:
+            print(f"✗ Sanity check failed: {e}")
+            sys.exit(1)
+
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError:
+            params = vars(args)
+    else:
+        params = vars(args)
+        params.pop('json', None)
+        params.pop('test', None)
+        # Map CLI arg names to run() expectation if they differ
+        params["server_type"] = params.get("server_type") or getattr(args, "server_type", None)
+        params = {k: v for k, v in params.items() if v is not None}
         
+    result = run(params)
     print(json.dumps(result, indent=2))
+
+if __name__ == '__main__':
+    main()

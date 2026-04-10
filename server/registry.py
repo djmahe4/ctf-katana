@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import importlib.util
 import types
+import sys
+import os
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import yaml
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,7 +46,7 @@ class Skill:
 
 
 def _load_yaml(path: Path) -> dict:
-    with open(path, "r") as fh:
+    with open(path, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
 
 
@@ -69,16 +73,24 @@ def discover_skills(skills_dir: Optional[Path] = None) -> Dict[str, Skill]:
     if skills_dir is None:
         skills_dir = Path(__file__).resolve().parent.parent / "skills"
 
+    # Add project root to sys.path to allow skills to import from the root package
+    root_dir = str(Path(__file__).resolve().parent.parent)
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
+
     skills: Dict[str, Skill] = {}
 
     if not skills_dir.is_dir():
         return skills
 
-    for child in sorted(skills_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        yaml_path = child / "skill.yaml"
-        if not yaml_path.exists():
+    # Use glob to find all skill.yaml files recursively
+    for yaml_path in sorted(skills_dir.glob("**/skill.yaml")):
+        child = yaml_path.parent
+        
+        # Skill identity based on relative path to skills_dir
+        try:
+            skill_id = str(child.relative_to(skills_dir)).replace(os.sep, ".")
+        except ValueError:
             continue
 
         raw = _load_yaml(yaml_path)
@@ -91,23 +103,38 @@ def discover_skills(skills_dir: Optional[Path] = None) -> Dict[str, Skill]:
             agent=raw.get("agent", False),
         )
 
-        # Load prompt
+        # Prompt
         prompt_path = child / "prompt.md"
-        prompt = prompt_path.read_text() if prompt_path.exists() else ""
-
-        # Load run function
-        run_path = child / "run.py"
-        run_fn = None
-        if run_path.exists():
-            mod = _load_module(run_path, f"skill_{meta.name}")
-            run_fn = getattr(mod, "run", None)
-
-        skills[meta.name] = Skill(
-            meta=meta,
-            prompt=prompt,
-            run=run_fn,
-            directory=child,
-        )
+        prompt_content = ""
+        if prompt_path.exists():
+            prompt_content = prompt_path.read_text(encoding="utf-8")
+        
+        # Loader (run.py)
+        run_py = child / "run.py"
+        if not run_py.exists():
+            continue
+            
+        try:
+            # Load module using unique name based on path
+            module_name = f"skills.{skill_id}.run"
+            spec = importlib.util.spec_from_file_location(module_name, run_py)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                # Keep track of the module in sys.modules to avoid double-loading or import issues
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+                run_fn = getattr(module, "run", None)
+                
+                if run_fn:
+                    skills[meta.name] = Skill(
+                        meta=meta,
+                        prompt=prompt_content,
+                        run=run_fn,
+                        directory=child
+                    )
+        except Exception as e:
+            logger.error(f"Failed to load skill at {child}: {e}")
+            continue
 
     return skills
 

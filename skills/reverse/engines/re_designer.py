@@ -1,5 +1,5 @@
 import logging
-from ..models import ReverseRunResult, ReverseMode, ReverseFinding, ReverseSeverity
+from skills.reverse.models import ReverseRunResult, ReverseMode, ReverseFinding, ReverseSeverity
 
 logger = logging.getLogger(__name__)
 

@@ -14,8 +14,9 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from context.knowledge_base import KnowledgeBase, Document, search_knowledge
 
@@ -93,7 +94,7 @@ class RAGSkill:
                 })
             
             return {
-                'status': 'success',
+                'status': True,
                 'query': query,
                 'results': formatted_results,
                 'total_found': len(formatted_results),
@@ -107,8 +108,8 @@ class RAGSkill:
         except Exception as e:
             logger.error(f"Search error: {e}")
             return {
-                'status': 'error',
-                'message': str(e),
+                'status': False,
+                'summary': f"Search error: {str(e)}",
                 'query': query,
             }
     
@@ -149,8 +150,8 @@ class RAGSkill:
             )
             
             return {
-                'status': 'success',
-                'message': f'Document added successfully',
+                'status': True,
+                'summary': f'Document added successfully',
                 'document_id': doc_id,
                 'title': title or source,
             }
@@ -158,8 +159,8 @@ class RAGSkill:
         except Exception as e:
             logger.error(f"Add document error: {e}")
             return {
-                'status': 'error',
-                'message': str(e),
+                'status': False,
+                'summary': f"Add document error: {str(e)}",
             }
     
     def ingest_github_repo(
@@ -212,8 +213,8 @@ class RAGSkill:
                 topics = repo_info.get('topics', [])
                 
                 return {
-                    'status': 'success',
-                    'message': f'Ingested {repo_name}',
+                    'status': True,
+                    'summary': f'Successfully ingested {repo_name}',
                     'repo': repo_name,
                     'description': description,
                     'topics': topics,
@@ -229,8 +230,8 @@ class RAGSkill:
         except Exception as e:
             logger.error(f"Ingest error: {e}")
             return {
-                'status': 'error',
-                'message': str(e),
+                'status': False,
+                'summary': f"Ingest error: {str(e)}",
                 'repo_url': repo_url,
             }
     
@@ -277,16 +278,16 @@ class RAGSkill:
                 docs_added += 1
             
             return {
-                'status': 'success',
-                'message': f'Ingested {docs_added} frames from YouTube OCR',
+                'status': True,
+                'summary': f'Ingested {docs_added} frames from YouTube OCR',
                 'video_id': video_id,
                 'frames_indexed': docs_added
             }
         except Exception as e:
             logger.error(f"YouTube ingestion error: {e}")
             return {
-                'status': 'error',
-                'message': str(e),
+                'status': False,
+                'summary': f"YouTube ingestion error: {str(e)}",
                 'url': url
             }
     
@@ -297,7 +298,8 @@ class RAGSkill:
             sources = self.kb.list_sources()
             
             return {
-                'status': 'success',
+                'status': True,
+                'summary': 'Retrieved knowledge base statistics',
                 'stats': stats,
                 'sources': sources,
             }
@@ -305,8 +307,8 @@ class RAGSkill:
         except Exception as e:
             logger.error(f"Stats error: {e}")
             return {
-                'status': 'error',
-                'message': str(e),
+                'status': False,
+                'summary': f"Stats error: {str(e)}",
             }
     
     def list_sources(self) -> Dict[str, Any]:
@@ -315,7 +317,8 @@ class RAGSkill:
             sources = self.kb.list_sources()
             
             return {
-                'status': 'success',
+                'status': True,
+                'summary': f'Listed {len(sources)} sources',
                 'sources': sources,
                 'total_source_types': len(sources),
             }
@@ -323,8 +326,8 @@ class RAGSkill:
         except Exception as e:
             logger.error(f"List sources error: {e}")
             return {
-                'status': 'error',
-                'message': str(e),
+                'status': False,
+                'summary': f"List sources error: {str(e)}",
             }
 
 
@@ -354,96 +357,70 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         }
     """
     action = params.get('action', 'search')
+    rag = RAGSkill()
     
     try:
-        skill = RAGSkill()
-        
+        res = None
         if action == 'search':
-            query = params.get('query')
-            if not query:
-                return {
-                    'status': 'error',
-                    'message': 'query parameter required for search action',
-                }
-            
-            return skill.search(
-                query=query,
+            res = rag.search(
+                query=params.get('query', ''),
                 limit=params.get('limit', 5),
                 source_type=params.get('source_type'),
                 tags=params.get('tags'),
-                min_score=params.get('min_score', 0.0),
+                min_score=params.get('min_score', 0.0)
             )
-        
         elif action == 'add':
-            content = params.get('content')
-            source = params.get('source')
-            source_type = params.get('source_type', 'manual')
-            
-            if not content or not source:
-                return {
-                    'status': 'error',
-                    'message': 'content and source parameters required for add action',
-                }
-            
-            return skill.add_document(
-                content=content,
-                source=source,
-                source_type=source_type,
+            res = rag.add_document(
+                content=params.get('content', ''),
+                source=params.get('source', 'manual'),
+                source_type=params.get('source_type', 'text'),
                 title=params.get('title', ''),
                 url=params.get('url', ''),
                 tags=params.get('tags'),
-                metadata=params.get('metadata'),
+                metadata=params.get('metadata')
             )
-        
         elif action == 'ingest':
-            repo_url = params.get('repo_url')
-            if not repo_url:
-                return {
-                    'status': 'error',
-                    'message': 'repo_url parameter required for ingest action',
-                }
-            
-            return skill.ingest_github_repo(
-                repo_url=repo_url,
+            res = rag.ingest_github_repo(
+                repo_url=params.get('repo_url', ''),
                 include_patterns=params.get('include_patterns'),
-                exclude_patterns=params.get('exclude_patterns'),
+                exclude_patterns=params.get('exclude_patterns')
             )
-        
         elif action == 'ingest_youtube':
-            url = params.get('url')
-            results = params.get('results')
-            if not url or not results:
-                return {
-                    'status': 'error',
-                    'message': 'url and results parameters required for ingest_youtube action',
-                }
-            
-            return skill.ingest_youtube_ocr(
-                url=url,
-                results=results,
+            res = rag.ingest_youtube_ocr(
+                url=params.get('url', ''),
+                results=params.get('results', []),
                 title=params.get('title', ''),
-                tags=params.get('tags'),
+                tags=params.get('tags')
             )
-        
         elif action == 'stats':
-            return skill.get_stats()
-        
+            res = rag.get_stats()
         elif action == 'list_sources':
-            return skill.list_sources()
-        
-        else:
+            res = rag.list_sources()
+            
+        # Standardize return format
+        if res:
+            summary = res.get('summary', f"RAG action '{action}' completed.")
+            if action == 'search' and res.get('status'):
+                summary = f"Found {res.get('total_found', 0)} results for query: {res.get('query')}"
+            
             return {
-                'status': 'error',
-                'message': f'Unknown action: {action}',
-                'available_actions': ['search', 'add', 'ingest', 'stats', 'list_sources'],
+                'status': res.get('status', False),
+                'summary': summary,
+                'result': res
             }
+        
+        return {
+            'status': False,
+            'summary': f"RAG action '{action}' returned no result.",
+            'result': {}
+        }
             
     except Exception as e:
         logger.error(f"RAG skill error: {e}")
         return {
-            'status': 'error',
-            'message': str(e),
-            'error_type': type(e).__name__,
+            'status': False,
+            'summary': f"RAG skill error: {str(e)}",
+            'result': {'error_type': type(e).__name__}
         }
 
 
@@ -452,21 +429,39 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='RAG Skill CLI')
-    parser.add_argument('action', choices=['search', 'add', 'ingest', 'stats', 'list_sources'])
+    parser.add_argument('action', nargs='?', choices=['search', 'add', 'ingest', 'stats', 'list_sources'], default='stats')
     parser.add_argument('--query', '-q', help='Search query')
     parser.add_argument('--limit', '-l', type=int, default=5, help='Max results')
     parser.add_argument('--source-type', '-t', help='Filter by source type')
     parser.add_argument('--repo-url', '-r', help='GitHub repo URL for ingest')
+    parser.add_argument('--json', help='Pass parameters as JSON string')
+    parser.add_argument('--test', action='store_true', help='Run sanity test')
     
     args = parser.parse_args()
     
-    params = {
-        'action': args.action,
-        'query': args.query,
-        'limit': args.limit,
-        'source_type': args.source_type,
-        'repo_url': args.repo_url,
-    }
+    if args.test:
+        print("[*] Testing RAG search...")
+        result = run({'action': 'search', 'query': 'vulnerability', 'limit': 1})
+        print(json.dumps(result, indent=2))
+        return
+
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError:
+            print(json.dumps({'status': False, 'summary': 'Invalid JSON input', 'result': {}}))
+            return
+    else:
+        if not args.action and not args.json:
+            parser.print_help()
+            return
+        params = {
+            'action': args.action,
+            'query': args.query,
+            'limit': args.limit,
+            'source_type': args.source_type,
+            'repo_url': args.repo_url,
+        }
     
     result = run(params)
     print(json.dumps(result, indent=2))

@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from .models import VulnType, Severity, IoTFinding, IoTAnalysisResult, SEVERITY_WEIGHTS
+from skills.iot_embedded.models import VulnType, Severity, IoTFinding, IoTAnalysisResult, SEVERITY_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class IoTHandlerBase(ABC):
             VulnType.WEAK_PERMISSIONS: "Follow the principle of least privilege; remove world-writable permissions from system files.",
             VulnType.COMMAND_INJECTION: "Sanitize user input before passing to system shells; use parameterized APIs.",
             VulnType.DEBUG_ACCOUNTS: "Remove all diagnostic/backdoor accounts before shipping.",
-            CulnType.DANGEROUS_FUNCTIONS: "Replace unsafe functions (strcpy, gets) with bounded alternatives (strncpy, fgets).",
+            VulnType.DANGEROUS_FUNCTIONS: "Replace unsafe functions (strcpy, gets) with bounded alternatives (strncpy, fgets).",
             VulnType.FORMAT_STRING: "Ensure format strings are constants, never user-controlled input.",
             VulnType.WEAK_CRYPTO: "Migrate to modern cryptographic standards like AES-GCM or SHA-256.",
             VulnType.HARDCODED_ADDRESSES: "Use runtime configuration or DNS instead of hardcoded IPs.",

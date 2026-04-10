@@ -2,7 +2,7 @@ import requests
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-from .models import WebFinding, WebCategory, WebRunResult, WebSeverity
+from skills.web.models import WebFinding, WebCategory, WebRunResult, WebSeverity
 
 logger = logging.getLogger(__name__)
 

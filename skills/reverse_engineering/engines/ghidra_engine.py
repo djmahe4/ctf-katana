@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import subprocess
 import logging
@@ -45,10 +46,10 @@ class GhidraEngine:
                  self.analyze_headless = Path(self.ghidra_path) / "support" / "analyzeHeadless.bat"
                  
         if self.analyze_headless.exists():
-            logger.info(f"✅ Ghidra found at: {self.ghidra_path}")
+            logger.info(f"[SUCCESS] Ghidra found at: {self.ghidra_path}")
             return True
         else:
-            logger.error(f"❌ Could not find analyzeHeadless.bat at {self.analyze_headless}")
+            logger.error(f"[ERROR] Could not find analyzeHeadless.bat at {self.analyze_headless}")
             return False
 
     async def decompile(self, binary_path: str, output_dir: str) -> Dict[str, Any]:
@@ -73,7 +74,7 @@ class GhidraEngine:
         ]
         
         try:
-            logger.info(f"🚀 Running Ghidra Headless on {binary_path}...")
+            logger.info(f"[START] Running Ghidra Headless on {binary_path}...")
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,

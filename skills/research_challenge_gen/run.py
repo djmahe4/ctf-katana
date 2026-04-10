@@ -22,8 +22,9 @@ from datetime import datetime
 from enum import Enum
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 logger = logging.getLogger(__name__)
 
@@ -902,8 +903,9 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     if not finding and not vuln_type and not draft:
         return {
-            'status': 'error',
-            'message': 'Either finding, vuln_type, or draft parameter required',
+            'status': False,
+            'summary': 'Error: Either finding, vuln_type, or draft parameter required',
+            'result': {}
         }
     
     try:
@@ -964,30 +966,34 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             )
         
         return {
-            'status': 'success',
-            'challenge': {
-                'id': challenge.id,
-                'name': challenge.name,
-                'category': challenge.category,
-                'difficulty': challenge.difficulty,
-                'points': challenge.points,
-                'description': challenge.description,
-                'flag': challenge.flag,
-                'flag_format': challenge.flag_format,
-                'hints': [asdict(h) for h in challenge.hints],
-                'solution': asdict(challenge.solution) if challenge.solution else None,
-                'hardening': asdict(challenge.hardening) if challenge.hardening else None,
-                'source_finding': challenge.source_finding,
-                'created_at': challenge.created_at,
-                'generated_files': challenge.generated_files,
-            },
+            'status': True,
+            'summary': f"Successfully generated '{challenge.category}' challenge: {challenge.name} ({challenge.difficulty}).",
+            'result': {
+                'challenge': {
+                    'id': challenge.id,
+                    'name': challenge.name,
+                    'category': challenge.category,
+                    'difficulty': challenge.difficulty,
+                    'points': challenge.points,
+                    'description': challenge.description,
+                    'flag': challenge.flag,
+                    'flag_format': challenge.flag_format,
+                    'hints': [asdict(h) for h in challenge.hints],
+                    'solution': asdict(challenge.solution) if challenge.solution else None,
+                    'hardening': asdict(challenge.hardening) if challenge.hardening else None,
+                    'source_finding': challenge.source_finding,
+                    'created_at': challenge.created_at,
+                    'generated_files': challenge.generated_files,
+                },
+            }
         }
         
     except Exception as e:
         logger.error(f"Challenge generation error: {e}")
         return {
-            'status': 'error',
-            'message': str(e),
+            'status': False,
+            'summary': f"Challenge generation error: {str(e)}",
+            'result': {}
         }
 
 
@@ -998,25 +1004,45 @@ def main():
     parser = argparse.ArgumentParser(description='CTF Challenge Generator CLI')
     parser.add_argument('--vuln-type', '-v', help='Vulnerability type')
     parser.add_argument('--category', '-c',
-                        choices=['web', 'pwn', 'crypto', 'forensics', 'reverse', 'misc', 'web3', 'mobile'])
+                        choices=['web', 'pwn', 'crypto', 'forensics', 'reverse', 'misc', 'web3', 'mobile', 'iot'])
     parser.add_argument('--difficulty', '-d',
                         choices=['easy', 'medium', 'hard', 'insane'],
                         default='medium')
     parser.add_argument('--hardening', choices=['none', 'standard', 'aggressive'], default='standard')
+    parser.add_argument('--json', help='Pass parameters as JSON string')
+    parser.add_argument('--test', action='store_true', help='Test with sample input')
     
     args = parser.parse_args()
     
-    if not args.vuln_type:
-        print("Error: --vuln-type required")
-        sys.exit(1)
+    if args.test:
+        test_params = {
+            'vuln_type': 'sqli',
+            'category': 'web',
+            'difficulty': 'easy'
+        }
+        print("Testing with sample sqli input...")
+        result = run(test_params)
+        print(json.dumps(result, indent=2, default=str))
+        return
+
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError:
+            print(json.dumps({'status': False, 'summary': 'Invalid JSON input', 'result': {}}))
+            sys.exit(1)
+    else:
+        if not args.vuln_type:
+            parser.print_help()
+            sys.exit(1)
+        params = {
+            'vuln_type': args.vuln_type,
+            'category': args.category,
+            'difficulty': args.difficulty,
+            'ai_hardening': args.hardening,
+        }
     
-    result = run({
-        'vuln_type': args.vuln_type,
-        'category': args.category,
-        'difficulty': args.difficulty,
-        'ai_hardening': args.hardening,
-    })
-    
+    result = run(params)
     print(json.dumps(result, indent=2, default=str))
 
 

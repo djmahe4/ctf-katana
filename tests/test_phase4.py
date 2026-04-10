@@ -23,13 +23,11 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def load_module_from_path(module_name: str, file_path: Path):
-    """Load a Python module from file path (handles hyphenated directories)."""
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
+# Standard imports for Phase 4 modules (valid packages now)
+import skills.iot_embedded.run as iot_module
+import skills.fuzzing.run as fuzzing_module
+import skills.exploitation.windows_user_mode.run as windows_module
+import skills.exploitation.ghactions.run as ghactions_module
 
 
 # =============================================================================
@@ -146,12 +144,6 @@ class TestWeb3Analyzer:
 # =============================================================================
 # IoT/Embedded Analyzer Tests
 # =============================================================================
-
-# Load IoT module (handles hyphenated directory)
-iot_module = load_module_from_path(
-    'skills_iot_embedded_run',
-    PROJECT_ROOT / 'skills' / 'iot-embedded' / 'run.py'
-)
 
 
 class TestIoTAnalyzer:
@@ -294,12 +286,6 @@ class TestAndroidAnalyzer:
 # Web Fuzzer Tests
 # =============================================================================
 
-# Load fuzzing module
-fuzzing_module = load_module_from_path(
-    'skills_fuzzing_run',
-    PROJECT_ROOT / 'skills' / 'fuzzing' / 'run.py'
-)
-
 
 class TestWebFuzzer:
     """Tests for web fuzzer."""
@@ -369,12 +355,6 @@ class TestWebFuzzer:
 # =============================================================================
 # Windows Exploitation Tests
 # =============================================================================
-
-# Load Windows exploitation module
-windows_module = load_module_from_path(
-    'skills_exploitation_windows_run',
-    PROJECT_ROOT / 'skills' / 'exploitation' / 'windows-user-mode' / 'run.py'
-)
 
 
 class TestWindowsExploitation:
@@ -451,12 +431,6 @@ class TestWindowsExploitation:
 # =============================================================================
 # GitHub Actions Exploitation Tests
 # =============================================================================
-
-# Load GH Actions module
-ghactions_module = load_module_from_path(
-    'skills_exploitation_ghactions_run',
-    PROJECT_ROOT / 'skills' / 'exploitation' / 'ghactions' / 'run.py'
-)
 
 
 class TestGHActionsExploitation:
@@ -593,10 +567,10 @@ class TestPhase4Integration:
         """Test skill.yaml files exist."""
         skill_dirs = [
             'skills/web3',
-            'skills/iot-embedded',
+            'skills/iot_embedded',
             'skills/android',
             'skills/fuzzing',
-            'skills/exploitation/windows-user-mode',
+            'skills/exploitation/windows_user_mode',
             'skills/exploitation/ghactions',
         ]
         
@@ -608,10 +582,10 @@ class TestPhase4Integration:
         """Test prompt.md files exist."""
         skill_dirs = [
             'skills/web3',
-            'skills/iot-embedded',
+            'skills/iot_embedded',
             'skills/android',
             'skills/fuzzing',
-            'skills/exploitation/windows-user-mode',
+            'skills/exploitation/windows_user_mode',
             'skills/exploitation/ghactions',
         ]
         

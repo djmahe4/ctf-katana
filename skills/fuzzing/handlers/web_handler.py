@@ -6,8 +6,8 @@ from urllib.parse import urlparse, urlencode, parse_qs
 from pathlib import Path
 from datetime import datetime
 
-from ..models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
-from ..base import FuzzerHandlerBase
+from skills.fuzzing.models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
+from skills.fuzzing.base import FuzzerHandlerBase
 
 logger = logging.getLogger(__name__)
 

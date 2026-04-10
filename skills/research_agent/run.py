@@ -19,8 +19,9 @@ from datetime import datetime
 from enum import Enum
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from context.knowledge_base import KnowledgeBase, search_knowledge
 from skills.research_chrome_scraper.scraper import ChromeScraper
@@ -588,8 +589,8 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     if not topic and mode != 'validate':
         return {
-            'status': 'error',
-            'message': 'topic parameter required',
+            'status': False,
+            'summary': 'topic parameter required',
         }
     
     try:
@@ -604,7 +605,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             result = agent.research(topic, depth, target)
         elif mode == 'hunt':
             if not target:
-                return {'status': 'error', 'message': 'target required for hunt mode'}
+                return {'status': False, 'summary': 'target required for hunt mode'}
             result = agent.hunt(target, topic, depth)
         elif mode == 'validate':
             evidence = params.get('evidence', [])
@@ -621,46 +622,59 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             )
             challenge = agent.generate_challenge(finding)
             return {
-                'status': 'success',
-                'mode': 'generate',
-                'challenge': challenge,
+                'status': True,
+                'summary': f"Generated challenge based on research topic: {topic}",
+                'result': {
+                    'mode': 'generate',
+                    'challenge': challenge,
+                }
             }
         elif mode == 'full_cycle':
             result = agent.full_cycle(topic, depth, target)
         elif mode == 'interactive':
             result = agent.interactive_loop(topic)
             return {
-                'status': 'success',
-                'mode': 'interactive',
-                'candidates': result.get('candidates', {}),
-                'message': 'Entering Interactive Mode. Review candidates below.'
+                'status': True,
+                'summary': f"Entered interactive mode for topic: {topic}",
+                'result': {
+                    'mode': 'interactive',
+                    'candidates': result.get('candidates', {}),
+                    'summary': 'Entering Interactive Mode. Review candidates below.'
+                }
             }
         else:
             return {
-                'status': 'error',
-                'message': f'Unknown mode: {mode}',
-                'valid_modes': ['research', 'hunt', 'validate', 'generate', 'full_cycle'],
+                'status': False,
+                'summary': f'Unknown mode: {mode}',
+                'result': {'valid_modes': ['research', 'hunt', 'validate', 'generate', 'full_cycle']},
             }
         
+        summary = f"Completed {result.mode} for topic: {result.topic}."
+        if result.findings:
+            summary += f" Found {len(result.findings)} items."
+
         return {
-            'status': result.status,
-            'mode': result.mode,
-            'topic': result.topic,
-            'target': result.target,
-            'findings': [asdict(f) for f in result.findings],
-            'knowledge_sources': result.knowledge_sources[:5],  # Limit for output
-            'report': result.report,
-            'challenge': result.challenge,
-            'duration_seconds': result.duration_seconds,
-            'metadata': result.metadata,
+            'status': True,
+            'summary': summary,
+            'result': {
+                'mode': result.mode,
+                'topic': result.topic,
+                'target': result.target,
+                'findings': [asdict(f) for f in result.findings],
+                'knowledge_sources': result.knowledge_sources[:5],  # Limit for output
+                'report': result.report,
+                'challenge': result.challenge,
+                'duration_seconds': result.duration_seconds,
+                'metadata': result.metadata,
+            }
         }
         
     except Exception as e:
         logger.error(f"Research agent error: {e}")
         return {
-            'status': 'error',
-            'message': str(e),
-            'error_type': type(e).__name__,
+            "status": False,
+            "summary": f"Research agent error: {str(e)}",
+            "result": {"error_type": type(e).__name__}
         }
 
 

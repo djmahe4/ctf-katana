@@ -2,8 +2,8 @@ import logging
 import re
 from typing import Dict, Any, List
 
-from ..models import WebRunResult, WebCategory, WebFinding, WebSeverity
-from ..base import WebHandlerBase
+from skills.web.models import WebRunResult, WebCategory, WebFinding, WebSeverity
+from skills.web.base import WebHandlerBase
 
 logger = logging.getLogger(__name__)
 
