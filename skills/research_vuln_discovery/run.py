@@ -168,7 +168,7 @@ class Vulnerability:
 @dataclass
 class DiscoveryResult:
     """Result of vulnerability discovery."""
-    status: str
+    status: bool
     target: str
     target_type: str
     vulnerabilities: List[Vulnerability] = field(default_factory=list)
@@ -460,7 +460,7 @@ Output as JSON array:
         duration = (datetime.utcnow() - start).total_seconds()
         
         return DiscoveryResult(
-            status="success",
+            status=True,
             target=target,
             target_type=target_type.value,
             vulnerabilities=all_vulnerabilities,
@@ -512,7 +512,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         summary = f"Vulnerability discovery on '{discovery_result.target}' ({discovery_result.target_type}) found {vuln_count} potential issues."
         
         return {
-            'status': discovery_result.status == "success",
+            'status': discovery_result.status,
             'summary': summary,
             'result': res_data
         }

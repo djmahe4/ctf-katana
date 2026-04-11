@@ -8,5 +8,20 @@ This skill allows the Purple Engine agents to manage the CTFd platform, includin
 - Always verify the security posture after updating a challenge.
 - Support both administrative tasks and participant-side queries.
 
-## Protection-as-Code (PaC)
-Integrate with kavach_shield to ensure the platform itself is hardened during management operations.
+## Output Format
+
+Always return a JSON object with this structure:
+```json
+{
+  "status": true,
+  "summary": "Brief summary of the management operation",
+  "result": {
+    "operation": "create_challenge",
+    "success": true,
+    "details": {
+      "id": 123,
+      "name": "New Challenge"
+    }
+  }
+}
+```

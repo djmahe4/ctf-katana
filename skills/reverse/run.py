@@ -26,7 +26,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """Execute the reverse skill with given parameters."""
     target = params.get('target') or params.get('snippet')
     if not target:
-        return {'status': 'error', 'summary': 'Target or snippet required'}
+        return {'status': False, 'summary': 'Target or snippet required', 'result': {}}
     
     mode_str = params.get('mode', 'synergy')
     action = params.get('action', 'analyze')
@@ -41,10 +41,10 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         elif action == "create":
             result = synthesis_handler.run(target, mode, **params)
         else:
-            return {'status': 'error', 'summary': f'Unknown action {action}'}
+            return {'status': False, 'summary': f'Unknown action {action}', 'result': {}}
             
         return {
-            'status': 'success',
+            'status': True,
             'summary': result.summary,
             'result': {
                 'findings': [
@@ -62,8 +62,9 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as e:
         return {
-            'status': 'error', 
-            'summary': f"Reverse analysis failed: {str(e)}"
+            'status': False, 
+            'summary': f"Reverse analysis failed: {str(e)}",
+            'result': {'error': str(e)}
         }
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

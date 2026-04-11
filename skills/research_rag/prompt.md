@@ -60,7 +60,7 @@ Return results as structured data:
 
 ```json
 {
-  "status": "success",
+  "status": true,
   "query": "original query",
   "results": [
     {

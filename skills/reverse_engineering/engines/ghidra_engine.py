@@ -55,7 +55,7 @@ class GhidraEngine:
     async def decompile(self, binary_path: str, output_dir: str) -> Dict[str, Any]:
         """Decompile a binary using Ghidra's headless mode."""
         if not await self.ensure_path():
-            return {'status': 'error', 'message': 'Ghidra not configured.'}
+            return {'status': False, 'message': 'Ghidra not configured.'}
             
         binary_path = str(Path(binary_path).resolve())
         project_dir = str(Path(output_dir).resolve() / "ghidra_project")
@@ -84,17 +84,17 @@ class GhidraEngine:
             
             if process.returncode != 0:
                 return {
-                    'status': 'error', 
+                    'status': False, 
                     'message': f"Ghidra exited with code {process.returncode}",
                     'stderr': stderr.decode()
                 }
                 
             return {
-                'status': 'success',
+                'status': True,
                 'output_dir': project_dir,
                 'stdout': stdout.decode()
             }
             
         except Exception as e:
             logger.error(f"Ghidra execution failed: {e}")
-            return {'status': 'error', 'message': str(e)}
+            return {'status': False, 'message': str(e)}

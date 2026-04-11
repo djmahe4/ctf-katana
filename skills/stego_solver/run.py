@@ -26,19 +26,19 @@ def run(params: dict) -> dict:
     fn = _ACTIONS.get(action)
     if fn is None:
         return {
-            "status": "error",
+            "status": False,
             "summary": f"Unknown action: {action}",
             "result": {"available": list(_ACTIONS)}
         }
     try:
-        result = fn(params)
+        data = fn(params)
         return {
-            "status": "success",
+            "status": True,
             "summary": f"Executed {action} stego analysis.",
-            "result": result
+            "result": data
         }
     except Exception as exc:
-        return {"status": "error", "summary": str(exc)}
+        return {"status": False, "summary": str(exc), "result": {"error": str(exc)}}
 
 if __name__ == "__main__":
     if len(sys.argv) > 2:

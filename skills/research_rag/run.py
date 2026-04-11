@@ -351,7 +351,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     Returns:
         {
-            'status': 'success' | 'error',
+            'status': bool,
             'results': [...],    # Search results
             'stats': {...},      # Knowledge base stats
         }

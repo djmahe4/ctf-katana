@@ -91,7 +91,7 @@ class Web3Vulnerability:
 @dataclass
 class Web3AnalysisResult:
     """Web3 analysis result data structure."""
-    status: str
+    status: bool
     target: str
     chain: str
     network: str = "mainnet"

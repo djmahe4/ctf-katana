@@ -40,7 +40,7 @@ async def _run_internal(params: Dict[str, Any]) -> Dict[str, Any]:
     if test:
         logger.info("[!] Running in TEST mode. No actual network requests will be made.")
         return {
-            "status": "success",
+            "status": True,
             "items": [
                 {"cveId": "CVE-2026-TEST", "title": "Test Vulnerability", "status": "new", "link": "https://test.link"},
             ],
@@ -53,7 +53,7 @@ async def _run_internal(params: Dict[str, Any]) -> Dict[str, Any]:
         
         if not pending:
             logger.info("[!] No pending CVEs found in cache. Run 'scout' first to populate headers.")
-            return {"status": "success", "summary": "No pending CVEs in cache.", "recent_findings": []}
+            return {"status": True, "summary": "No pending CVEs in cache.", "recent_findings": []}
 
         logger.info(f"[*] Found {len(pending)} pending CVEs for live scraping.")
 
@@ -76,7 +76,7 @@ async def _run_internal(params: Dict[str, Any]) -> Dict[str, Any]:
     recent_ids = list(all_records.keys())[-limit:] if all_records else []
     
     return {
-        "status": "success",
+        "status": True,
         "total_records": len(all_records),
         "recent_findings": [all_records[rid] for rid in recent_ids],
         "summary": f"Retrieved {len(recent_ids)} findings."
@@ -87,7 +87,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         res_data = asyncio.run(_run_internal(params))
         
-        status = res_data.get('status') == 'success'
+        status = res_data.get('status') is True
         return {
             'status': status,
             'summary': res_data.get('summary', 'Intelligence scrape completed.'),

@@ -458,7 +458,7 @@ class TestKavachWrapper:
         
         result = wrapper.execute(test_skill, "test_skill")
         
-        assert result['status'] == 'success'
+        assert result['status'] is True
         assert result['result'] == {"result": "success"}
     
     def test_execute_with_pii_sanitization(self):
@@ -471,7 +471,7 @@ class TestKavachWrapper:
         
         result = wrapper.execute(test_skill, "test_skill")
         
-        assert result['status'] == 'success'
+        assert result['status'] is True
         assert "sk-12345" in result['result']  # Prefix visible
         assert "*" in result['result']  # Should have redaction
         assert result['audit']['pii_detections'] > 0
@@ -527,7 +527,7 @@ class TestKavachWrapperSkill:
         """Test status action."""
         result = run({'action': 'status'})
         
-        assert result['status'] == 'success'
+        assert result['status'] is True
         assert 'protected_skills' in result['result']
         assert 'unprotected_skills' in result['result']
     
@@ -538,8 +538,8 @@ class TestKavachWrapperSkill:
             'skill_name': 'test_skill',
         })
         
-        assert result['status'] == 'success'
-        assert 'enabled' in result['message'].lower() or 'protected' in result['message'].lower()
+        assert result['status'] is True
+        assert 'enabled' in result['summary'].lower() or 'protected' in result['summary'].lower()
     
     def test_action_audit_query(self):
         """Test audit query action."""
@@ -548,22 +548,22 @@ class TestKavachWrapperSkill:
             'filters': {'limit': 10},
         })
         
-        assert result['status'] == 'success'
+        assert result['status'] is True
         assert 'events' in result['result']
     
     def test_action_audit_verify(self):
         """Test audit verify action."""
         result = run({'action': 'audit_verify'})
         
-        assert result['status'] in ['success', 'error']
+        assert isinstance(result['status'], bool)
         assert 'is_valid' in result['result']
     
     def test_missing_action(self):
         """Test missing action parameter."""
         result = run({})
         
-        assert result['status'] == 'error'
-        assert 'action' in result['message'].lower()
+        assert result['status'] is False
+        assert 'action' in result['summary'].lower()
 
 
 if __name__ == '__main__':

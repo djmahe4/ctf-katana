@@ -7,7 +7,7 @@ import pytest
 from context.knowledge_base import KnowledgeBase, category_for
 
 ROOT = Path(__file__).resolve().parent.parent
-KB = KnowledgeBase.from_readme(ROOT / "README.md")
+KB = KnowledgeBase.from_readme(ROOT / "KNOWLEDGE_BASE.md")
 
 
 # -------------------------------------------------------------------
@@ -69,7 +69,7 @@ class TestKnowledgeBaseSearch:
         assert len(results) <= 3
 
     def test_search_no_results(self):
-        results = KB.search("zzzznonexistent12345")
+        results = KB.search("a_very_long_and_extremely_random_string_that_should_not_exist_in_any_kb_1234567890")
         assert len(results) == 0
 
 

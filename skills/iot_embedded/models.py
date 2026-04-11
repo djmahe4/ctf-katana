@@ -69,7 +69,7 @@ class ExtractedFile:
 @dataclass
 class IoTAnalysisResult:
     """Result of an IoT/Embedded security analysis."""
-    status: str
+    status: bool
     target: str
     arch: str = "auto"
     os_info: str = "unknown"

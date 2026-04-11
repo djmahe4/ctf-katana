@@ -71,8 +71,9 @@ class CTFdManager:
             
             if not challenge_id:
                 return {
-                    'status': 'error',
-                    'summary': 'Failed to create challenge'
+                    'status': False,
+                    'summary': 'Failed to create challenge',
+                    'result': {}
                 }
             
             # Upload files if provided
@@ -84,7 +85,7 @@ class CTFdManager:
                             files_uploaded += 1
             
             return {
-                'status': 'success',
+                'status': True,
                 'action': 'create_challenge',
                 'result': {
                     'challenge_id': challenge_id,
@@ -98,8 +99,9 @@ class CTFdManager:
         except Exception as e:
             logger.error(f"Create challenge error: {e}", exc_info=True)
             return {
-                'status': 'error',
-                'summary': str(e)
+                'status': False,
+                'summary': str(e),
+                'result': {}
             }
     
     def update_challenge(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -111,7 +113,7 @@ class CTFdManager:
             success = self.client.update_challenge(challenge_id, updates)
             
             return {
-                'status': 'success' if success else 'failed',
+                'status': True if success else False,
                 'action': 'update_challenge',
                 'result': {
                     'challenge_id': challenge_id,
@@ -122,14 +124,15 @@ class CTFdManager:
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     def delete_challenge(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete challenge (requires confirmation)."""
         if not params.get('confirm'):
             return {
-                'status': 'error',
-                'summary': 'Delete challenge requires explicit confirmation (confirm=True)'
+                'status': False,
+                'summary': 'Delete challenge requires explicit confirmation (confirm=True)',
+                'result': {}
             }
         
         try:
@@ -137,7 +140,7 @@ class CTFdManager:
             success = self.client.delete_challenge(challenge_id)
             
             return {
-                'status': 'success' if success else 'failed',
+                'status': True if success else False,
                 'action': 'delete_challenge',
                 'result': {'challenge_id': challenge_id},
                 'summary': f"Challenge {challenge_id} deleted" if success else "Delete failed",
@@ -145,7 +148,7 @@ class CTFdManager:
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     def bulk_import(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Import multiple challenges from JSON."""
@@ -153,12 +156,12 @@ class CTFdManager:
             input_file = params['input_file']
             
             if not Path(input_file).exists():
-                return {'status': 'error', 'summary': f'File not found: {input_file}'}
+                return {'status': False, 'summary': f'File not found: {input_file}', 'result': {}}
             
             count = self.client.import_challenges(input_file)
             
             return {
-                'status': 'success' if count > 0 else 'failed',
+                'status': True if count > 0 else False,
                 'action': 'bulk_import',
                 'result': {
                     'imported': count,
@@ -185,7 +188,7 @@ class CTFdManager:
                     count = len(data.get('challenges', []))
                 
                 return {
-                    'status': 'success',
+                    'status': True,
                     'action': 'bulk_export',
                     'result': {
                         'exported': count,
@@ -195,7 +198,7 @@ class CTFdManager:
                     'affected_items': count
                 }
             else:
-                return {'status': 'error', 'summary': 'Export failed'}
+                return {'status': False, 'summary': 'Export failed', 'result': {}}
                 
         except Exception as e:
             return {'status': 'failed', 'message': str(e)}
@@ -230,7 +233,7 @@ class CTFdManager:
                 self.client.update_config('challenge_visibility', 'public')
             
             return {
-                'status': 'success',
+                'status': True,
                 'action': 'start_event',
                 'summary': 'Event started successfully',
                 'result': {
@@ -241,7 +244,7 @@ class CTFdManager:
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     def pause_event(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Pause event (freeze submissions)."""
@@ -255,14 +258,14 @@ class CTFdManager:
                 self.client.update_config('score_visibility', 'hidden')
             
             return {
-                'status': 'success',
+                'status': True,
                 'action': 'pause_event',
                 'summary': 'Event paused',
                 'result': params
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     def end_event(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """End CTF event."""
@@ -279,7 +282,7 @@ class CTFdManager:
                 self.client.update_config('registration_visibility', 'private')
             
             return {
-                'status': 'success',
+                'status': True,
                 'action': 'end_event',
                 'summary': 'Event ended successfully',
                 'result': {
@@ -289,14 +292,15 @@ class CTFdManager:
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     def reset_event(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Reset event (DESTRUCTIVE - requires confirmation)."""
         if not params.get('confirm'):
             return {
-                'status': 'error',
-                'summary': 'Reset event requires explicit confirmation (confirm=True) - THIS WILL DELETE ALL SUBMISSIONS!'
+                'status': False,
+                'summary': 'Reset event requires explicit confirmation (confirm=True) - THIS WILL DELETE ALL SUBMISSIONS!',
+                'result': {}
             }
         
         try:
@@ -328,7 +332,7 @@ class CTFdManager:
             scoreboard = self.client.get_scoreboard(count=top_n)
             
             return {
-                'status': 'success',
+                'status': True,
                 'action': 'get_scoreboard',
                 'result': {
                     'teams': scoreboard,
@@ -338,7 +342,7 @@ class CTFdManager:
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     def get_statistics(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get comprehensive event statistics."""
@@ -362,14 +366,14 @@ class CTFdManager:
                 stats['challenges_by_category'][cat]['total_points'] += challenge.value
             
             return {
-                'status': 'success',
+                'status': True,
                 'action': 'get_statistics',
                 'result': stats,
                 'summary': 'Statistics retrieved successfully'
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     # ==================== Configuration ====================
     
@@ -379,7 +383,7 @@ class CTFdManager:
             backup_path = self._create_backup(include_uploads=params.get('include_uploads', True))
             
             return {
-                'status': 'success',
+                'status': True,
                 'action': 'backup_database',
                 'result': {
                     'backup_path': backup_path
@@ -388,7 +392,7 @@ class CTFdManager:
             }
             
         except Exception as e:
-            return {'status': 'failed', 'message': str(e)}
+            return {'status': False, 'summary': str(e), 'result': {}}
     
     def _create_backup(self, include_uploads: bool = True) -> Optional[str]:
         """Internal backup creation helper."""
@@ -422,8 +426,9 @@ class CTFdManager:
         # Safety check for destructive actions
         if action in self.DESTRUCTIVE_ACTIONS and not params.get('confirm'):
             return {
-                'status': 'error',
-                'summary': f"Action '{action}' is destructive and requires explicit confirmation (confirm=True)"
+                'status': False,
+                'summary': f"Action '{action}' is destructive and requires explicit confirmation (confirm=True)",
+                'result': {}
             }
         
         # Route to appropriate handler
@@ -455,9 +460,9 @@ class CTFdManager:
         
         if not handler:
             return {
-                'status': 'error',
+                'status': False,
                 'summary': f"Unknown action: {action}",
-                'available_actions': list(action_map.keys())
+                'result': {'available_actions': list(action_map.keys())}
             }
         
         try:
@@ -465,9 +470,10 @@ class CTFdManager:
         except Exception as e:
             logger.error(f"Action '{action}' error: {e}", exc_info=True)
             return {
-                'status': 'error',
+                'status': False,
                 'action': action,
-                'summary': str(e)
+                'summary': str(e),
+                'result': {}
             }
 
 
@@ -510,13 +516,6 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         
         # Execute action
         result = manager.execute_action(action, action_params)
-        
-        # Ensure standardized fields
-        status_val = result.get('status', 'success')
-        standardized_status = True if status_val in ['success', 'partial'] else False
-        
-        if 'status' in result:
-             result['status'] = standardized_status
         
         if 'summary' not in result:
             result['summary'] = result.get('message', f"Action '{action}' executed")

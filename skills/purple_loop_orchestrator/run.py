@@ -27,9 +27,9 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
     target = params.get('target')
     if not target:
         return {
-            "status": "error", 
-            "message": "Target (CVE-ID or URL) is required",
-            "summary": "Failed to start Purple Loop: Missing target"
+            "status": False, 
+            "summary": "Failed to start Purple Loop: Missing target",
+            "result": {"error": "Target (CVE-ID or URL) is required"}
         }
         
     reset = params.get('reset', False)
@@ -69,16 +69,16 @@ async def run(params: Dict[str, Any]) -> Dict[str, Any]:
         }
         
         return {
-            "status": "success",
+            "status": True,
             "summary": f"Purple Loop completed for {target} (Session: {result_data['session_id']})",
             "result": result_data
         }
     except Exception as e:
         logger.error(f"Execution failed: {e}")
         return {
-            "status": "error", 
-            "message": str(e),
-            "summary": f"Purple Loop failed for {target}: {str(e)}"
+            "status": False,
+            "summary": f"Purple Loop failed for {target}: {str(e)}",
+            "result": {"error": str(e)}
         }
 
 async def main():

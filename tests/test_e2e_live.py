@@ -52,15 +52,36 @@ async def test_e2e_adversarial_pipeline():
             
             async def mock_prepare(skill, context):
                 if skill == "scaffolding":
-                    return {"draft": {"files": [{"name": "app.py", "content": "print('hello')"}]}, "status": "success"}
+                    # We return PARAMETERS that the dispatcher would prepare
+                    return {
+                        "action": "generate",
+                        "draft": {"files": [{"name": "app.py", "content": "print('hello')"}]},
+                        "finding": context.get("research_results", {}).get("purple_loop", {}).get("finding", {}),
+                        "category": "web"
+                    }
                 if skill == "flagger":
-                    return {"flag": "katana{test}", "handler": "reverse", "target_file": "app.py", "metadata": {"target_file": "app.py"}}
+                    return {
+                        "flag": "katana{test_hardened}",
+                        "level": "moderate",
+                        "handler": "reverse",
+                        "metadata": {"target_file": "app.py"} # Used by conductor for injection
+                    }
                 if skill == "merger":
-                    # Simulate multiple components for merger test if needed, but here we just pass
-                    return {"selected_components": [], "layout_plan": {"services": []}}
+                    return {
+                        "selected_components": [context.get("challenge", {})],
+                        "target_session": "test_session",
+                        "layout_plan": {"services": [{"name": "web", "external_port": 8080, "internal_port": 80}]}
+                    }
                 if skill == "superpowers":
-                    return {"challenge": context.get("challenge"), "strategy": {"injections": []}}
-                return {}
+                    return {
+                        "challenge": context.get("challenge", {}),
+                        "strategy": {
+                            "name": "Loki-Mock",
+                            "injections": [{"file": "app.py", "type": "trap", "content": "exploit"}]
+                        },
+                        "chaos_level": 0.5
+                    }
+                return {"action": "default"}
             
             mock_prep.side_effect = mock_prepare
             

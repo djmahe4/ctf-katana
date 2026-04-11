@@ -186,7 +186,7 @@ class IntelligenceMiner:
             "cve_id": cve_id,
             "intelligence_count": len(intelligence),
             "references_scraped": len(hv_urls[:7]),
-            "status": "success"
+            "status": True
         }
 
     def _extract_references(self, cve_data: Dict[str, Any]) -> List[str]:

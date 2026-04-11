@@ -23,3 +23,19 @@ When asked to "think" or "analyze", provide:
 2.  **Recommended Wordlists**: Specific filenames from `Seclists` or internal stores.
 3.  **Optimized Command**: A `ffuf` command string that the user can copy-paste.
 4.  **Reasoning**: Why these specific choices were made.
+
+## Output Format
+
+Always return a JSON object with this structure:
+```json
+{
+  "status": true,
+  "summary": "Brief summary of web fuzzing strategy",
+  "result": {
+    "tech_stack": ["..."],
+    "wordlists": ["..."],
+    "ffuf_command": "ffuf -u ...",
+    "reasoning": "..."
+  }
+}
+```

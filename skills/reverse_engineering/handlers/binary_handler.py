@@ -18,7 +18,7 @@ class BinaryHandler:
         elif action == "ghidra_decompile":
             return self.decompile_ghidra(path)
         else:
-            return {"error": f"Unknown action: {action}"}
+            return {"status": False, "error": f"Unknown action: {action}"}
 
     def decompile_ghidra(self, path: str) -> Dict[str, Any]:
         """Wrapper for Ghidra headless decompiler."""
@@ -41,14 +41,14 @@ class BinaryHandler:
         """Simple wrapper for objdump (simulated for current environment)."""
         logger.info(f"[*] Disassembling: {path}")
         # In practice, this calls tools.objdump_runner
-        return {"action": "disassemble", "target": path, "status": "success", "asm_count": 0}
+        return {"action": "disassemble", "target": path, "status": True, "asm_count": 0}
 
     def show_symbols(self, path: str) -> Dict[str, Any]:
         """Simple wrapper for nm (simulated)."""
         logger.info(f"[*] Extracting symbols: {path}")
-        return {"action": "symbols", "target": path, "status": "success", "symbol_count": 0}
+        return {"action": "symbols", "target": path, "status": True, "symbol_count": 0}
 
     def show_elf_info(self, path: str) -> Dict[str, Any]:
         """Simple wrapper for readelf (simulated)."""
         logger.info(f"[*] Extracting ELF info: {path}")
-        return {"action": "elf_info", "target": path, "status": "success"}
+        return {"action": "elf_info", "target": path, "status": True}

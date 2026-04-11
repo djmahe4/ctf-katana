@@ -35,9 +35,9 @@ async def test_conductor_merger_to_superpowers_transition(mock_deps):
     with patch.object(conductor.dispatcher, 'prepare_params', new_callable=AsyncMock) as mock_prep:
         mock_prep.return_value = {"status": "mocked_params"}
         with patch("skills.merger.run.run") as mock_run_merger:
-            mock_run_merger.return_value = {"status": "success", "merged_challenge": {"name": "merged"}}
+            mock_run_merger.return_value = {"status": True, "merged_challenge": {"name": "merged"}}
             with patch("skills.superpowers.run.run") as mock_run_superpowers:
-                mock_run_superpowers.return_value = {"status": "success", "challenge": {"name": "ai_hard"}}
+                mock_run_superpowers.return_value = {"status": True, "challenge": {"name": "ai_hard"}}
                 
                 # We need to simulate the loop or call handlers directly for surgical testing
                 # Let's test _run_merger

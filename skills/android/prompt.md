@@ -160,21 +160,26 @@ Java.perform(function() {
 
 ## Output Format
 
+Always return a JSON object with this structure:
 ```json
 {
-  "package": "com.example.app",
-  "version": "1.0.0",
-  "min_sdk": 21,
-  "target_sdk": 30,
-  "permissions": [...],
-  "components": {
-    "activities": [...],
-    "services": [...],
-    "receivers": [...],
-    "providers": [...]
-  },
-  "vulnerabilities": [...],
-  "risk_score": 7.5
+  "status": true,
+  "summary": "Brief summary of Android security analysis",
+  "result": {
+    "package": "com.example.app",
+    "version": "1.0.0",
+    "min_sdk": 21,
+    "target_sdk": 30,
+    "permissions": [...],
+    "components": {
+      "activities": [...],
+      "services": [...],
+      "receivers": [...],
+      "providers": [...]
+    },
+    "vulnerabilities": [...],
+    "risk_score": 7.5
+  }
 }
 ```
 

@@ -126,8 +126,8 @@ class KavachWrapperSkill:
         handler = action_handlers.get(action)
         if not handler:
             return {
-                'status': 'error',
-                'message': f"Unknown action: {action}",
+                'status': False,
+                'summary': f"Unknown action: {action}",
                 'available_actions': list(action_handlers.keys()),
             }
         
@@ -137,9 +137,9 @@ class KavachWrapperSkill:
         except Exception as e:
             logger.error(f"Action {action} failed: {e}", exc_info=True)
             return {
-                'status': 'error',
-                'message': str(e),
-                'error_type': type(e).__name__,
+                'status': False,
+                'summary': str(e),
+                'result': {'error_type': type(e).__name__}
             }
     
     def action_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -151,8 +151,8 @@ class KavachWrapperSkill:
         recent_events = self.audit_ledger.query_events(limit=10)
         
         return {
-            'status': 'success',
-            'message': f"{len(protected)} skills protected, {len(unprotected)} unprotected",
+            'status': True,
+            'summary': f"{len(protected)} skills protected, {len(unprotected)} unprotected",
             'result': {
                 'protected_skills': protected,
                 'unprotected_skills': unprotected,
@@ -167,8 +167,8 @@ class KavachWrapperSkill:
         skill_name = params.get('skill_name')
         if not skill_name:
             return {
-                'status': 'error',
-                'message': 'skill_name parameter required',
+                'status': False,
+                'summary': 'skill_name parameter required',
             }
         
         # Mark skill as protected
@@ -183,8 +183,8 @@ class KavachWrapperSkill:
         )
         
         return {
-            'status': 'success',
-            'message': f"Kavach protection enabled for {skill_name}",
+            'status': True,
+            'summary': f"Kavach protection enabled for {skill_name}",
             'result': {
                 'skill_name': skill_name,
                 'protected': True,
@@ -196,8 +196,8 @@ class KavachWrapperSkill:
         skill_name = params.get('skill_name')
         if not skill_name:
             return {
-                'status': 'error',
-                'message': 'skill_name parameter required',
+                'status': False,
+                'summary': 'skill_name parameter required',
             }
         
         # Mark skill as unprotected
@@ -212,8 +212,8 @@ class KavachWrapperSkill:
         )
         
         return {
-            'status': 'success',
-            'message': f"Kavach protection disabled for {skill_name}",
+            'status': True,
+            'summary': f"Kavach protection disabled for {skill_name}",
             'result': {
                 'skill_name': skill_name,
                 'protected': False,
@@ -247,8 +247,8 @@ class KavachWrapperSkill:
             severity_count[severity_val] = severity_count.get(severity_val, 0) + 1
         
         return {
-            'status': 'success',
-            'message': f"Found {len(events)} matching events",
+            'status': True,
+            'summary': f"Found {len(events)} matching events",
             'result': {
                 'events': events,
                 'count': len(events),
@@ -275,8 +275,8 @@ class KavachWrapperSkill:
         )
         
         return {
-            'status': 'success' if is_valid else 'error',
-            'message': 'Audit ledger is valid' if is_valid else f'Audit ledger corrupted: {len(errors)} errors',
+            'status': True if is_valid else False,
+            'summary': 'Audit ledger is valid' if is_valid else f'Audit ledger corrupted: {len(errors)} errors',
             'result': {
                 'is_valid': is_valid,
                 'errors': errors,
@@ -288,8 +288,8 @@ class KavachWrapperSkill:
         """Commit phantom workspace changes to real workspace."""
         if not self.phantom_workspace:
             return {
-                'status': 'error',
-                'message': 'Phantom workspace not enabled in security policy',
+                'status': False,
+                'summary': 'Phantom workspace not enabled in security policy',
             }
         
         # Get operation summary before committing
@@ -307,8 +307,8 @@ class KavachWrapperSkill:
         )
         
         return {
-            'status': 'success',
-            'message': f"Committed {sum(operations.values())} phantom operations",
+            'status': True,
+            'summary': f"Committed {sum(operations.values())} phantom operations",
             'result': {
                 'operations': operations,
                 'committed': True,
@@ -319,15 +319,15 @@ class KavachWrapperSkill:
         """Rollback specific file from snapshot."""
         if not self.phantom_workspace:
             return {
-                'status': 'error',
-                'message': 'Phantom workspace not enabled in security policy',
+                'status': False,
+                'summary': 'Phantom workspace not enabled in security policy',
             }
         
         file_path = params.get('file_path')
         if not file_path:
             return {
-                'status': 'error',
-                'message': 'file_path parameter required',
+                'status': False,
+                'summary': 'file_path parameter required',
             }
         
         file_path = Path(file_path)
@@ -345,8 +345,8 @@ class KavachWrapperSkill:
             )
             
             return {
-                'status': 'success',
-                'message': f"Rolled back file: {file_path}",
+                'status': True,
+                'summary': f"Rolled back file: {file_path}",
                 'result': {
                     'file_path': str(file_path),
                     'rolled_back': True,
@@ -354,8 +354,8 @@ class KavachWrapperSkill:
             }
         else:
             return {
-                'status': 'error',
-                'message': f"No snapshot available for: {file_path}",
+                'status': False,
+                'summary': f"No snapshot available for: {file_path}",
                 'result': {
                     'file_path': str(file_path),
                     'rolled_back': False,
@@ -366,8 +366,8 @@ class KavachWrapperSkill:
         """Show phantom workspace operations."""
         if not self.phantom_workspace:
             return {
-                'status': 'error',
-                'message': 'Phantom workspace not enabled in security policy',
+                'status': False,
+                'summary': 'Phantom workspace not enabled in security policy',
             }
         
         operations = self.phantom_workspace.get_operation_summary()
@@ -377,8 +377,8 @@ class KavachWrapperSkill:
         snapshot_files = [str(p) for p in self.phantom_workspace.file_snapshots.keys()]
         
         return {
-            'status': 'success',
-            'message': f"{sum(operations.values())} phantom operations, {snapshot_count} snapshots",
+            'status': True,
+            'summary': f"{sum(operations.values())} phantom operations, {snapshot_count} snapshots",
             'result': {
                 'operations': operations,
                 'snapshots': {
@@ -393,8 +393,8 @@ class KavachWrapperSkill:
         """Deploy honeypot tripwire files."""
         if not self.tripwire_monitor:
             return {
-                'status': 'error',
-                'message': 'Tripwires not enabled in security policy',
+                'status': False,
+                'summary': 'Tripwires not enabled in security policy',
             }
         
         self.tripwire_monitor.deploy()
@@ -410,8 +410,8 @@ class KavachWrapperSkill:
         )
         
         return {
-            'status': 'success',
-            'message': f"Deployed {deployed_count} tripwire files",
+            'status': True,
+            'summary': f"Deployed {deployed_count} tripwire files",
             'result': {
                 'deployed_count': deployed_count,
                 'tripwire_files': [str(p) for p in self.tripwire_monitor.deployed_paths],
@@ -422,8 +422,8 @@ class KavachWrapperSkill:
         """Remove all deployed tripwire files."""
         if not self.tripwire_monitor:
             return {
-                'status': 'error',
-                'message': 'Tripwires not enabled in security policy',
+                'status': False,
+                'summary': 'Tripwires not enabled in security policy',
             }
         
         removed_count = len(self.tripwire_monitor.deployed_paths)
@@ -439,8 +439,8 @@ class KavachWrapperSkill:
         )
         
         return {
-            'status': 'success',
-            'message': f"Removed {removed_count} tripwire files",
+            'status': True,
+            'summary': f"Removed {removed_count} tripwire files",
             'result': {
                 'removed_count': removed_count,
             }
@@ -450,16 +450,16 @@ class KavachWrapperSkill:
         """Show tripwire access log."""
         if not self.tripwire_monitor:
             return {
-                'status': 'error',
-                'message': 'Tripwires not enabled in security policy',
+                'status': False,
+                'summary': 'Tripwires not enabled in security policy',
             }
         
         access_log = self.tripwire_monitor.get_access_log()
         triggered_count = sum(1 for event in access_log if event.get('triggered'))
         
         return {
-            'status': 'success',
-            'message': f"{triggered_count} tripwire triggers detected",
+            'status': True,
+            'summary': f"{triggered_count} tripwire triggers detected",
             'result': {
                 'access_log': access_log,
                 'triggered_count': triggered_count,
@@ -473,8 +473,8 @@ class KavachWrapperSkill:
         total_detections = sum(summary.values())
         
         return {
-            'status': 'success',
-            'message': f"{total_detections} PII instances detected",
+            'status': True,
+            'summary': f"{total_detections} PII instances detected",
             'result': {
                 'summary': summary,
                 'total_detections': total_detections,
@@ -497,8 +497,8 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     
     Returns:
         {
-            'status': 'success' | 'error',
-            'message': str,
+            'status': bool,
+            'summary': str,
             'result': dict,
         }
     """
@@ -506,8 +506,8 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     action = params.get('action')
     if not action:
         return {
-            'status': 'error',
-            'message': 'action parameter required',
+            'status': False,
+            'summary': 'action parameter required',
             'available_actions': [
                 'status', 'enable', 'disable',
                 'audit_query', 'audit_verify',
@@ -526,9 +526,9 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         )
     except Exception as e:
         return {
-            'status': 'error',
-            'message': f"Failed to initialize Kavach wrapper: {e}",
-            'error_type': type(e).__name__,
+            'status': False,
+            'summary': f"Failed to initialize Kavach wrapper: {e}",
+            'result': {'error_type': type(e).__name__}
         }
     
     # Execute action
@@ -581,7 +581,7 @@ def main():
     print(json.dumps(result, indent=2))
     
     # Exit with appropriate code
-    sys.exit(0 if result['status'] == 'success' else 1)
+    sys.exit(0 if result.get('status') is True else 1)
 
 
 if __name__ == '__main__':

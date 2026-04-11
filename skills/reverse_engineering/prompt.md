@@ -20,7 +20,22 @@ python skills/reverse_engineering/run.py /bin/ls --action disassemble
 python skills/reverse_engineering/run.py --action think --prompt "Explain the logic of this x86_64 XOR loop."
 ```
 
-## Technical Synergy
+## Output Format
+
+If returning findings or technical brainstorming results, use this structure:
+```json
+{
+  "status": true,
+  "summary": "Brief summary of technical analysis/brainstorming",
+  "result": {
+    "action": "action_name",
+    "findings": "Detailed technical findings or assembly interpretation",
+    "recommendations": ["step 1", "step 2"]
+  }
+}
+```
+
+---
 Work closely with the **Logic Architect** (`@reverse`). 
 - When the Logic Architect identifies a vulnerability pattern (e.g. buffer overflow), use it to find the **Technical Gadget** location.
 - When the Logic Architect designs a challenge, use the analysis tools to verify the **Technical Resilience** (e.g. check if PIE/NX were correctly applied).

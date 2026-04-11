@@ -82,7 +82,7 @@ class AgentResult:
 @dataclass
 class SwarmResult:
     """Combined result from swarm execution."""
-    status: str
+    status: bool
     swarm_type: str
     topic: str
     agents_deployed: int
@@ -454,7 +454,7 @@ class ResearchSwarm:
         failed = sum(1 for r in results if r.status != "complete")
         
         return SwarmResult(
-            status="success" if completed > 0 else "failed",
+            status=True if completed > 0 else False,
             swarm_type=swarm_type.value,
             topic=topic,
             agents_deployed=len(agent_types),
@@ -526,11 +526,8 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         completed_count = swarm_result.agents_completed
         total_count = swarm_result.agents_deployed
         summary = f"Swarm '{swarm_result.swarm_type}' completed on topic '{swarm_result.topic}' with {completed_count}/{total_count} agents successful."
-        if swarm_result.status == "failed":
-            summary = f"Swarm failed to produce results for topic '{topic}'."
-        
         return {
-            'status': swarm_result.status == "success",
+            'status': swarm_result.status,
             'summary': summary,
             'result': res_data
         }

@@ -138,15 +138,16 @@ class PipelineConductor:
         # 2. Local Skill Execution
         result = self.dispatcher.execute_local(run_gen, params)
         
-        if result.get("status") == "success":
+        if result.get("status") is True:
             # 3. Agentic Validation (LLM checks quality)
-            if await self.dispatcher.validate_output("scaffolding", result, context):
-                self.memory.update_context("challenge", result["challenge"])
+            res_data = result.get("result", {})
+            if await self.dispatcher.validate_output("scaffolding", res_data, context):
+                self.memory.update_context("challenge", res_data.get("challenge"))
                 self.memory.transition("scaffolding_complete")
             else:
                 logger.error("Agentic Validation failed for scaffolding.")
         else:
-            logger.error(f"Scaffolding failed: {result.get('message')}")
+            logger.error(f"Scaffolding failed: {result.get('summary')}")
 
     async def _run_hardening(self):
         challenge = self.memory.get_context("challenge")
@@ -170,10 +171,11 @@ class PipelineConductor:
         params = await self.dispatcher.prepare_params("flagger", {"challenge": challenge, "research_results": self.memory.get_context("research_results") or {}})
         result = self.dispatcher.execute_local(run_flagger, params)
         
-        if result.get("status") == "success":
+        if result.get("status") is True:
             # Inject metadata for visibility in HITL review
+            res_data = result.get("result", {})
             if "metadata" in params:
-                result["metadata"] = params["metadata"]
+                res_data["metadata"] = params["metadata"]
             
             # 5. HITL Gate (Review Hardening)
             task_id = "hardening"
@@ -183,15 +185,17 @@ class PipelineConductor:
                     self.memory.mark_approved(task_id)
                 else:
                     logger.info(f"🚦 Waiting for HITL Review ({task_id.title()})...")
-                    if await self.reviewer.request_review(task_id, result, review_type="hardening") != ReviewStatus.APPROVED:
+                    if await self.reviewer.request_review(task_id, res_data, review_type="hardening") != ReviewStatus.APPROVED:
                         logger.warning("Hardening rejected. Re-running with potential adjustments.")
                         return 
                     self.memory.mark_approved(task_id)
             else:
                 logger.info(f"✅ Skipping {task_id.title()} Review (Already Approved)")
 
-            self.memory.update_context("hardened_payload", result.get("payload"))
+            self.memory.update_context("hardened_payload", res_data.get("payload"))
             self.memory.transition("hardening_complete")
+        else:
+            logger.error(f"Hardening failed: {result.get('summary')}")
 
     async def _run_merger(self):
         """
@@ -225,11 +229,11 @@ class PipelineConductor:
                 self.memory.mark_approved(task_id)
             
             result = self.dispatcher.execute_local(run_merger, params)
-            if result.get("status") == "success":
+            if result.get("status") is True:
                 logger.info("✅ Merger successful! Updating context with unified challenge.")
-                self.memory.update_context("challenge", result["merged_challenge"])
+                self.memory.update_context("challenge", result.get("result", {}).get("merged_challenge"))
             else:
-                logger.error(f"Merger failed: {result.get('message')}")
+                logger.error(f"Merger failed: {result.get('summary')}")
         else:
             logger.info("⏭️  Single component detected. Skipping merger.")
 
@@ -262,11 +266,11 @@ class PipelineConductor:
 
         result = self.dispatcher.execute_local(run_superpowers, params)
         
-        if result.get("status") == "success":
+        if result.get("status") is True:
             logger.info("✅ Superpowers applied! Challenge is now AI-Hard.")
-            self.memory.update_context("challenge", result["challenge"])
+            self.memory.update_context("challenge", result.get("result", {}).get("challenge"))
         else:
-            logger.error(f"Superpowers failed: {result.get('message')}")
+            logger.error(f"Superpowers failed: {result.get('summary')}")
             
         self.memory.transition("superpowers_complete")
 

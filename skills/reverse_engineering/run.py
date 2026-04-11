@@ -29,16 +29,24 @@ def run(params: dict) -> dict:
     if action == "think":
         prompt = params.get("prompt")
         if not prompt:
-            return {"status": "error", "summary": "--prompt required for 'think' action."}
+            return {
+                "status": False, 
+                "summary": "--prompt required for 'think' action.",
+                "result": {}
+            }
         # In practice, this would use free-llm-apis
         return {
-            "status": "success", 
+            "status": True, 
             "summary": f"Brainstorming initiated for: {prompt}", 
             "result": {"action": "think", "prompt": prompt}
         }
 
     if not path:
-        return {"status": "error", "summary": "Path parameter required for binary analysis."}
+        return {
+            "status": False, 
+            "summary": "Path parameter required for binary analysis.",
+            "result": {}
+        }
 
     try:
         handler = BinaryHandler()
@@ -48,12 +56,16 @@ def run(params: dict) -> dict:
         res_data = handler.analyze_binary(path, action)
         
         return {
-            "status": "success",
+            "status": True,
             "summary": f"Technical analysis '{action}' completed on {path}.",
             "result": res_data
         }
     except Exception as e:
-        return {"status": "error", "summary": str(e)}
+        return {
+            "status": False, 
+            "summary": str(e),
+            "result": {"error": str(e)}
+        }
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CTF-Katana Binary Analyst (ReverseEngineering v2)")

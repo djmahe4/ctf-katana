@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 WebFuzzer = WebHandler
 PAYLOADS = {
     "generic": ["admin", "login", "dashboard"],
-    "sqli": ["' OR 1=1--"],
+    "sqli": ["'", "' OR 1=1--", "admin' --", "' UNION SELECT NULL--"],
     "xss": ["<script>alert(1)</script>"],
     "lfi": ["../../etc/passwd"],
     "rce": ["; id"],
@@ -60,8 +60,9 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     target = params.get('target')
     if not target:
         return {
-            'status': 'error', 
-            'summary': 'Target parameter required'
+            'status': False, 
+            'summary': 'Target parameter required',
+            'result': {}
         }
     
     mode = params.get('mode', 'web')
@@ -96,15 +97,16 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         }
         
         return {
-            'status': 'success',
+            'status': True,
             'summary': result_obj.summary or f"Fuzzing completed for {target}",
             'result': fuzz_data
         }
     except Exception as e:
         logger.error(f"Fuzzing error: {e}")
         return {
-            'status': 'error', 
-            'summary': f"Error during fuzzing {mode}: {str(e)}"
+            'status': False, 
+            'summary': f"Error during fuzzing {mode}: {str(e)}",
+            'result': {}
         }
 
 def main():
@@ -131,11 +133,11 @@ def main():
 
     if args.action == "think":
         if not args.prompt:
-            print(json.dumps({"status": "error", "summary": "--prompt required for 'think' action"}))
+            print(json.dumps({"status": False, "summary": "--prompt required for 'think' action", "result": {}}))
             sys.exit(1)
         # Placeholder for complex action
         print(json.dumps({
-            "status": "success", 
+            "status": True, 
             "summary": f"Brainstorming triggered for: {args.prompt}",
             "result": {"prompt": args.prompt}
         }))
@@ -143,7 +145,7 @@ def main():
 
     if args.action == "mutate":
         if not args.target:
-            print(json.dumps({"status": "error", "summary": "Target required for 'mutate' action"}))
+            print(json.dumps({"status": False, "summary": "Target required for 'mutate' action", "result": {}}))
             sys.exit(1)
         try:
             designer = FuzzDesigner()
@@ -152,28 +154,28 @@ def main():
             with open(output_path, "w") as f:
                 f.write(script)
             print(json.dumps({
-                "status": "success",
+                "status": True,
                 "summary": f"Mutator script saved to: {output_path}",
                 "result": {"path": output_path}
             }))
         except Exception as e:
-            print(json.dumps({"status": "error", "summary": str(e)}))
+            print(json.dumps({"status": False, "summary": str(e), "result": {}}))
         sys.exit(0)
 
     if args.action == "ffufai":
         if not args.target:
-            print(json.dumps({"status": "error", "summary": "Target URL required for 'ffufai' action"}))
+            print(json.dumps({"status": False, "summary": "Target URL required for 'ffufai' action", "result": {}}))
             sys.exit(1)
         try:
             engine = FfufAIEngine(workspace_root=str(project_root))
             result = engine.run_fuzz(args.target, **vars(args))
             print(json.dumps({
-                "status": "success",
+                "status": True,
                 "summary": result.summary,
                 "result": {"findings_count": len(result.findings)}
             }))
         except Exception as e:
-            print(json.dumps({"status": "error", "summary": str(e)}))
+            print(json.dumps({"status": False, "summary": str(e), "result": {}}))
         sys.exit(0)
 
     if not args.target:

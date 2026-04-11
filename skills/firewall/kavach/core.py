@@ -772,7 +772,8 @@ class KavachWrapper:
             )
             
             return {
-                'status': 'success',
+                'status': True,
+                'summary': f"Successfully executed {skill_name} with Kavach protection",
                 'result': result,
                 'audit': {
                     'duration': duration,
@@ -810,7 +811,9 @@ class KavachWrapper:
                 raise
             
             return {
-                'status': 'error',
+                'status': False,
+                'summary': f"Failed to execute {skill_name}: {str(e)}",
+                'result': {},
                 'error': str(e),
                 'error_type': type(e).__name__,
                 'audit': {

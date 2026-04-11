@@ -14,7 +14,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     """Execute the forensics skill with given parameters."""
     target = params.get('target')
     if not target:
-        return {'status': 'error', 'summary': 'Target required'}
+        return {'status': False, 'summary': 'Target required', 'result': {}}
     
     target_path = Path(target)
     mode = params.get('mode', 'auto')
@@ -41,7 +41,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         result = handler.analyze(target_path, **kwargs)
         
         return {
-            'status': 'success',
+            'status': True,
             'summary': result.summary,
             'result': {
                 'findings': [
@@ -58,7 +58,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             }
         }
     except Exception as e:
-        return {'status': 'error', 'summary': str(e)}
+        return {'status': False, 'summary': str(e), 'result': {'error': str(e)}}
 
 def main():
     # Standalone support: Add project root to sys.path

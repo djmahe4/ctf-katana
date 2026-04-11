@@ -177,7 +177,7 @@ class AndroidComponent:
 @dataclass
 class AndroidAnalysisResult:
     """Result of Android analysis."""
-    status: str
+    status: bool
     target: str
     package_name: str = ""
     version_name: str = ""
@@ -376,20 +376,23 @@ class AndroidAnalyzer:
         """
         start = datetime.utcnow()
         
-        target_path = Path(target)
-        
-        if not target_path.exists() or not target_path.suffix.lower() == '.apk':
-            return AndroidAnalysisResult(
-                status="error",
-                target=target,
-                report="Target must be a valid APK file",
-            )
-        
+        # Handle raw manifest content for testing/direct analysis
         vulnerabilities = []
-        
-        # Extract manifest
-        manifest = self._extract_manifest(target_path)
-        manifest_info = self._parse_manifest_basic(manifest or "")
+        manifest = None
+        if (mode == AnalysisMode.MANIFEST or mode == "manifest") and ("<manifest" in target or "<application" in target):
+            manifest = target
+            manifest_info = self._parse_manifest_basic(manifest or "")
+        else:
+            target_path = Path(target)
+            if not target_path.exists() or not target_path.suffix.lower() == '.apk':
+                return AndroidAnalysisResult(
+                    status=False,
+                    target=target,
+                    report="Target must be a valid APK file",
+                )
+            # Extract manifest
+            manifest = self._extract_manifest(target_path)
+            manifest_info = self._parse_manifest_basic(manifest or "")
         
         # Analyze manifest
         if manifest and mode in [AnalysisMode.MANIFEST, AnalysisMode.FULL]:
@@ -411,7 +414,7 @@ class AndroidAnalyzer:
         dangerous = [p for p in manifest_info['permissions'] if p in DANGEROUS_PERMISSIONS]
         
         result = AndroidAnalysisResult(
-            status="success",
+            status=True,
             target=target,
             package_name=manifest_info['package'],
             version_name=manifest_info['version_name'],
@@ -476,21 +479,21 @@ class AndroidAnalyzer:
             
         # 1. Unpack
         if not compiler.unpack(target, str(work_dir)):
-            return {"status": "error", "message": "Failed to unpack APK."}
+            return {"status": False, "message": "Failed to unpack APK.", "result": {}}
             
         # 2. Inject
         if not hider.hide_vulnerability(str(work_dir), vuln_type):
-            return {"status": "error", "message": "Failed to inject vulnerability."}
+            return {"status": False, "message": "Failed to inject vulnerability.", "result": {}}
             
         # 3. Build
         if not compiler.build(str(work_dir), output_apk):
-            return {"status": "error", "message": "Failed to rebuild APK."}
+            return {"status": False, "message": "Failed to rebuild APK.", "result": {}}
             
         # 4. Sign (Stub)
         compiler.sign(output_apk)
         
         return {
-            "status": "success",
+            "status": True,
             "mode": "synthesis",
             "output_apk": output_apk,
             "vulnerability_injected": vuln_type
@@ -529,9 +532,10 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
             asyncio.set_event_loop(loop)
             
         res = loop.run_until_complete(analyzer.synthesize(target, output, vuln))
-        summary = f"Android synthesis completed. Vulnerability '{vuln}' injected into {output}." if res.get("status") == "success" else f"Android synthesis failed: {res.get('message')}"
+        is_success = res.get("status") is True
+        summary = f"Android synthesis completed. Vulnerability '{vuln}' injected into {output}." if is_success else f"Android synthesis failed: {res.get('message')}"
         return {
-            "status": res.get("status") == "success",
+            "status": is_success,
             "summary": summary,
             "result": res
         }
@@ -555,7 +559,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         }
         
         return {
-            'status': result.status == "success",
+            'status': result.status is True,
             'summary': f"Android analysis completed for {target}. Found {len(result.vulnerabilities)} vulnerabilities.",
             'result': result_data
         }

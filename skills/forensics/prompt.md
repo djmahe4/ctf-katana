@@ -46,3 +46,19 @@ Evidence of steganographic tampering often appears as:
 - **Plausibility Violations**: Timestamps out of range, non-sequential frag offsets.
 - **Entropy Shifts**: Encrypted/Encoded data in fields meant for small integers.
 - **Protocol Misuse**: Unassigned TCP Option types or multicast MAC addresses in unicast flows.
+
+## Output Format
+
+Always return a JSON object with this structure:
+```json
+{
+  "status": true,
+  "summary": "Brief summary of forensic analysis or challenge design",
+  "result": {
+    "file_type": "pcap | png | ...",
+    "extracted_data": "...",
+    "artifacts_found": ["..."],
+    "stego_method_detected": "icmp_ts | ip_frag | ..."
+  }
+}
+```

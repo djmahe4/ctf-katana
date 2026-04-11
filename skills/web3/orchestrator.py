@@ -52,7 +52,7 @@ class Web3Orchestrator:
             
             # Create analysis result
             result = Web3AnalysisResult(
-                status="success",
+                status=True,
                 target=target,
                 chain=chain_type,
                 network=network,
@@ -70,8 +70,9 @@ class Web3Orchestrator:
         except Exception as e:
             logger.error(f"Analysis failed: {e}", exc_info=True)
             return {
-                "status": "error",
-                "message": str(e)
+                "status": False,
+                "summary": str(e),
+                "result": {}
             }
 
     def _read_target(self, target: str) -> tuple[str, str]:

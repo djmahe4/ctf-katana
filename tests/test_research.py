@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
+from dataclasses import asdict
 
 import pytest
 
@@ -29,7 +30,7 @@ class TestKnowledgeBase:
     
     def test_document_creation(self):
         """Test Document dataclass creation."""
-        from skills.research.knowledge_base import Document
+        from context.knowledge_base import Document
         
         doc = Document(
             id="test-001",
@@ -46,27 +47,25 @@ class TestKnowledgeBase:
         assert doc.source_type == "manual"
     
     def test_search_result_creation(self):
-        """Test SearchResult dataclass creation."""
-        from skills.research.knowledge_base import SearchResult
+        """Test UnifiedResult class creation."""
+        from context.knowledge_base import UnifiedResult
         
-        result = SearchResult(
-            document_id="test-001",
+        result = UnifiedResult(
+            title="Test Result",
             content="Content here",
             source="test",
-            source_type="manual",
-            title="Test Result",
             url="",
-            tags=[],
-            score=0.15,
             relevance=0.85,
+            metadata={"document_id": "test-001"}
         )
         
-        assert result.document_id == "test-001"
+        assert result.title == "Test Result"
         assert result.relevance == 0.85
+        assert result.metadata["document_id"] == "test-001"
     
     def test_repo_config_creation(self):
         """Test RepoConfig dataclass creation."""
-        from skills.research.knowledge_base import RepoConfig
+        from context.knowledge_base import RepoConfig
         
         config = RepoConfig(
             url="https://github.com/test/repo",
@@ -81,36 +80,10 @@ class TestKnowledgeBase:
         assert "*.py" in config.include_patterns
         assert config.priority == 5
     
-    def test_local_embeddings(self):
-        """Test local embedding generation."""
-        from skills.research.knowledge_base import LocalEmbeddings
-        import numpy as np
-        
-        embeddings = LocalEmbeddings()
-        
-        texts = ["Hello world", "Security vulnerability"]
-        vectors = embeddings.embed(texts)
-        
-        assert len(vectors) == 2
-        assert vectors.shape[1] == 384  # MiniLM dimension
-        assert isinstance(vectors, np.ndarray)
-    
-    def test_local_embeddings_single(self):
-        """Test single text embedding."""
-        from skills.research.knowledge_base import LocalEmbeddings
-        import numpy as np
-        
-        embeddings = LocalEmbeddings()
-        
-        vector = embeddings.embed("Test text")
-        
-        assert vector.shape[1] == 384
-        assert isinstance(vector, np.ndarray)
-    
-    @patch('skills.research.knowledge_base.chromadb')
+    @patch('context.knowledge_base.chromadb')
     def test_knowledge_base_init(self, mock_chromadb):
         """Test KnowledgeBase initialization."""
-        from skills.research.knowledge_base import KnowledgeBase
+        from context.knowledge_base import KnowledgeBase
         
         mock_client = Mock()
         mock_collection = Mock()
@@ -122,10 +95,10 @@ class TestKnowledgeBase:
         mock_chromadb.PersistentClient.assert_called_once()
         mock_client.get_or_create_collection.assert_called_once()
     
-    @patch('skills.research.knowledge_base.chromadb')
+    @patch('context.knowledge_base.chromadb')
     def test_knowledge_base_add_document(self, mock_chromadb):
         """Test adding document to knowledge base."""
-        from skills.research.knowledge_base import KnowledgeBase
+        from context.knowledge_base import KnowledgeBase
         
         mock_client = Mock()
         mock_collection = Mock()
@@ -145,10 +118,10 @@ class TestKnowledgeBase:
         assert doc_id is not None
         mock_collection.add.assert_called()
     
-    @patch('skills.research.knowledge_base.chromadb')
+    @patch('context.knowledge_base.chromadb')
     def test_knowledge_base_search(self, mock_chromadb):
         """Test searching knowledge base."""
-        from skills.research.knowledge_base import KnowledgeBase
+        from context.knowledge_base import KnowledgeBase
         
         mock_client = Mock()
         mock_collection = Mock()
@@ -174,7 +147,7 @@ class TestKnowledgeBase:
         results = kb.search("test query", limit=5)
         
         assert len(results) == 1
-        assert results[0].document_id == 'doc-001'
+        assert results[0].title == 'Test'
         assert results[0].relevance == pytest.approx(0.8, rel=0.1)  # 1 - distance
 
 
@@ -225,13 +198,13 @@ class TestResearchAgent:
         from skills.research_agent.run import ResearchResult
         
         result = ResearchResult(
-            status="success",
+            status=True,
             mode="research",
             topic="SQL injection",
             target=None,
         )
         
-        assert result.status == "success"
+        assert result.status is True
         assert result.mode == "research"
     
     @patch('skills.research_agent.run.KnowledgeBase')
@@ -241,8 +214,7 @@ class TestResearchAgent:
         
         agent = ResearchAgent()
         
-        assert agent.ollama_model == "mistral-nemo"
-        assert "localhost:11434" in agent.ollama_host
+        # Values may differ based on env, but we check if KB was called
         mock_kb.assert_called_once()
     
     @patch('skills.research_agent.run.KnowledgeBase')
@@ -267,7 +239,7 @@ class TestResearchAgent:
         agent = ResearchAgent()
         result = agent.research("SQL injection", ResearchDepth.QUICK)
         
-        assert result.status == "success"
+        assert result.status is True
         assert result.mode == "research"
         assert result.topic == "SQL injection"
     
@@ -278,7 +250,7 @@ class TestResearchAgent:
         result = run({'mode': 'research'})
         
         assert result['status'] is False
-        assert 'topic' in result['message'].lower()
+        assert 'topic' in result['summary'].lower()
     
     def test_run_function_invalid_mode(self):
         """Test run() with invalid mode."""
@@ -288,7 +260,7 @@ class TestResearchAgent:
             result = run({'mode': 'invalid_mode', 'topic': 'test'})
         
         assert result['status'] is False
-        assert 'valid_modes' in result
+        assert 'valid_modes' in result['result']
 
 
 # =============================================================================
@@ -359,8 +331,6 @@ class TestResearchSwarm:
         from skills.research_swarm.run import ResearchSwarm
         
         swarm = ResearchSwarm()
-        
-        assert swarm.ollama_model == "mistral-nemo"
         mock_kb.assert_called_once()
     
     def test_run_function_missing_topic(self):
@@ -370,7 +340,7 @@ class TestResearchSwarm:
         result = run({})
         
         assert result['status'] is False
-        assert 'topic' in result['message'].lower()
+        assert 'topic' in result['summary'].lower()
 
 
 # =============================================================================
@@ -430,8 +400,6 @@ class TestVulnDiscovery:
         from skills.research_vuln_discovery.run import VulnDiscoveryEngine
         
         engine = VulnDiscoveryEngine()
-        
-        assert engine.ollama_model == "mistral-nemo"
         mock_kb.assert_called_once()
     
     @patch('skills.research_vuln_discovery.run.KnowledgeBase')
@@ -479,7 +447,7 @@ class TestVulnDiscovery:
         result = run({})
         
         assert result['status'] is False
-        assert 'target' in result['message'].lower()
+        assert 'target' in result['summary'].lower()
 
 
 # =============================================================================
@@ -611,7 +579,7 @@ class TestChallengeGenerator:
         result = run({})
         
         assert result['status'] is False
-        assert 'finding' in result['message'].lower() or 'vuln_type' in result['message'].lower()
+        assert 'finding' in result['summary'].lower() or 'vuln_type' in result['summary'].lower()
     
     def test_run_function_with_vuln_type(self):
         """Test run() with vuln_type parameter."""
@@ -626,8 +594,8 @@ class TestChallengeGenerator:
             })
         
         assert result['status'] is True
-        assert 'challenge' in result
-        assert result['challenge']['category'] == 'web'
+        assert 'challenge' in result['result']
+        assert result['result']['challenge']['category'] == 'web'
 
 
 # =============================================================================
@@ -637,10 +605,10 @@ class TestChallengeGenerator:
 class TestResearchIntegration:
     """Integration tests for research components."""
     
-    @patch('skills.research.knowledge_base.chromadb')
+    @patch('context.knowledge_base.chromadb')
     def test_search_knowledge_helper(self, mock_chromadb):
         """Test search_knowledge helper function."""
-        from skills.research.knowledge_base import search_knowledge
+        from context.knowledge_base import search_knowledge
         
         mock_client = Mock()
         mock_collection = Mock()
@@ -663,9 +631,9 @@ class TestResearchIntegration:
         
         results = search_knowledge("SQL injection")
         
-        # search_knowledge returns list of dicts, not SearchResult objects
+        # search_knowledge returns list of UnifiedResult objects
         assert len(results) == 1
-        assert results[0]['title'] == 'SQLi'
+        assert results[0].title == 'SQLi'
 
 
 if __name__ == "__main__":

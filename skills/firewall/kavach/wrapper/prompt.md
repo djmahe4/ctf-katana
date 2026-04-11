@@ -185,8 +185,8 @@ Always return structured JSON response:
 
 ```json
 {
-  "status": "success" | "error",
-  "message": "Human-readable status message",
+  "status": true,
+  "summary": "Human-readable status message",
   "result": {
     // Action-specific data
   }
@@ -221,11 +221,13 @@ You coordinate with other Purple Engine components:
 If action fails:
 ```json
 {
-  "status": "error",
-  "message": "Error description",
-  "error_type": "ExceptionClassName",
-  "details": {
-    // Additional context
+  "status": false,
+  "summary": "Error description",
+  "result": {
+    "error_type": "ExceptionClassName",
+    "details": {
+      // Additional context
+    }
   }
 }
 ```

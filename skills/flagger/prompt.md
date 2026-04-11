@@ -19,7 +19,23 @@ python skills/flagger/run.py "CTF{hArD_flAg}" --level difficult --handler revers
 python skills/flagger/run.py "CTF{web_flAg}" --level expert --handler web --template html
 ```
 
-## Anti-AI Synergy
+## Output Format
+
+Always return a JSON object with this structure:
+```json
+{
+  "status": true,
+  "summary": "Brief summary of flag hardening/obfuscation status",
+  "result": {
+    "obfuscated_flag": "...",
+    "transform_chain": ["xor", "base64", "rot13"],
+    "intensity": "difficult",
+    "handler": "reverse"
+  }
+}
+```
+
+---
 Work closely with the **Logic Architect** (`@reverse`) and **Binary Analyst** (`@reverse_engineering`). 
 - When the Logic Architect synthesizes a challenge, use `flagger` to provide the **Hardened Heart** of the challenge.
 - When the Binary Analyst describes a technical defense, use `flagger` to match the **Technical Deception** level (e.g., using Opcode mapping for low-level reversing challenges).

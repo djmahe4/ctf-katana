@@ -162,33 +162,36 @@ Return JSON with comprehensive results:
 
 ```json
 {
-  "status": "success|partial|failed",
-  "ctfd_instance": "http://localhost:8000",
-  "challenges_attempted": 5,
-  "challenges_solved": 3,
-  "results": [
-    {
-      "challenge_id": 42,
-      "challenge_name": "Caesar's Secret",
-      "category": "crypto",
-      "value": 100,
-      "status": "solved",
-      "flag": "flag{r0t_13_1s_n0t_s3cur3}",
-      "submitted": true,
-      "solve_time_seconds": 45,
-      "steps_executed": [
-        "Analyzed file: detected text encoding",
-        "Applied ROT13 cipher",
-        "Flag found in output",
-        "Submitted to CTFd: CORRECT"
-      ],
-      "writeup_path": "./ctfd_output/caesars_secret_writeup.md",
-      "exploit_path": null
-    }
-  ],
-  "total_points_earned": 300,
-  "execution_time_seconds": 320,
-  "errors": []
+  "status": true,
+  "summary": "Completed CTFd challenge solving run",
+  "result": {
+    "ctfd_instance": "http://localhost:8000",
+    "challenges_attempted": 5,
+    "challenges_solved": 3,
+    "results": [
+      {
+        "challenge_id": 42,
+        "challenge_name": "Caesar's Secret",
+        "category": "crypto",
+        "value": 100,
+        "status": "solved",
+        "flag": "flag{r0t_13_1s_n0t_s3cur3}",
+        "submitted": true,
+        "solve_time_seconds": 45,
+        "steps_executed": [
+          "Analyzed file: detected text encoding",
+          "Applied ROT13 cipher",
+          "Flag found in output",
+          "Submitted to CTFd: CORRECT"
+        ],
+        "writeup_path": "./ctfd_output/caesars_secret_writeup.md",
+        "exploit_path": null
+      }
+    ],
+    "total_points_earned": 300,
+    "execution_time_seconds": 320,
+    "errors": []
+  }
 }
 ```
 

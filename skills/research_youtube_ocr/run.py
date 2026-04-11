@@ -36,7 +36,7 @@ def run(params: dict) -> dict:
         results = scraper.run(url, max_duration=max_duration)
         
         res_data = {
-            "status": "success",
+            "status": True,
             "results": results,
             "metadata": {
                 "url": url,

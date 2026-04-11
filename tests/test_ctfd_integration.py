@@ -229,9 +229,9 @@ class TestCTFdSolveSkill:
             'api_token': 'test-token'
         })
         
-        assert result['status'] == 'success'
-        assert result['mode'] == 'list'
-        assert len(result['challenges']) == 1
+        assert result['status'] is True
+        assert result['result']['mode'] == 'list'
+        assert len(result['result']['challenges']) == 1
     
     def test_solve_skill_no_credentials(self):
         """Test solve skill without credentials."""
@@ -241,8 +241,8 @@ class TestCTFdSolveSkill:
             'ctfd_url': 'http://localhost:8000'
         })
         
-        assert result['status'] == 'error'
-        assert 'api_token' in result['message'] or 'username' in result['message']
+        assert result['status'] is False
+        assert 'api_token' in result['summary'] or 'username' in result['summary']
 
 
 class TestCTFdSetupSkill:
@@ -255,7 +255,7 @@ class TestCTFdSetupSkill:
         with patch('skills.ctfd_setup.run.CTFdSetup') as mock_setup:
             mock_instance = mock_setup.return_value
             mock_instance.execute.return_value = {
-                'status': 'success',
+                'status': True,
                 'ctfd_url': 'http://localhost:8000',
                 'admin_credentials': {
                     'username': 'admin',
@@ -267,7 +267,7 @@ class TestCTFdSetupSkill:
             
             result = run({'deployment_mode': 'quick'})
             
-            assert result['status'] == 'success'
+            assert result['status'] is True
             assert 'admin_credentials' in result
 
 
@@ -298,7 +298,7 @@ class TestCTFdManageSkill:
             'params': {'top_n': 10}
         })
         
-        assert result['status'] == 'success'
+        assert result['status'] is True
         assert len(result['result']['teams']) == 2
     
     def test_manage_delete_without_confirm(self):
@@ -312,8 +312,8 @@ class TestCTFdManageSkill:
             'params': {'challenge_id': 1}
         })
         
-        assert result['status'] == 'error'
-        assert 'confirm' in result['message'].lower()
+        assert result['status'] is False
+        assert 'confirm' in result['summary'].lower()
     
     def test_manage_unknown_action(self, mock_client):
         """Test unknown management action."""
@@ -326,8 +326,8 @@ class TestCTFdManageSkill:
             'params': {}
         })
         
-        assert result['status'] == 'error'
-        assert 'unknown action' in result['message'].lower()
+        assert result['status'] is False
+        assert 'unknown action' in result['summary'].lower()
 
 
 class TestPurpleEngineCLI:

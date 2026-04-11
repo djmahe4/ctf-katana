@@ -95,22 +95,26 @@ State inconsistencies and calculation errors.
 
 ```json
 {
-  "contract": "VulnerableContract",
-  "address": "0x...",
-  "vulnerabilities": [
-    {
-      "type": "reentrancy",
-      "severity": "CRITICAL",
-      "function": "withdraw(uint256)",
-      "line": 42,
-      "description": "State update after external call",
-      "exploitation": "...",
-      "remediation": "Use checks-effects-interactions pattern",
-      "poc": "..."
-    }
-  ],
-  "risk_score": 9.5,
-  "recommendations": [...]
+  "status": true,
+  "summary": "Brief summary of the smart contract analysis",
+  "result": {
+    "contract": "VulnerableContract",
+    "address": "0x...",
+    "vulnerabilities": [
+      {
+        "type": "reentrancy",
+        "severity": "CRITICAL",
+        "function": "withdraw(uint256)",
+        "line": 42,
+        "description": "State update after external call",
+        "exploitation": "...",
+        "remediation": "Use checks-effects-interactions pattern",
+        "poc": "..."
+      }
+    ],
+    "risk_score": 9.5,
+    "recommendations": [...]
+  }
 }
 ```
 

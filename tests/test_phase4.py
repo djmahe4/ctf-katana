@@ -60,7 +60,7 @@ class TestWeb3Analyzer:
         """
         vulns = web3_analyzer.detect_reentrancy(vulnerable_code)
         assert len(vulns) > 0
-        assert any('reentrancy' in v.vuln_type.lower() for v in vulns)
+        assert any('reentrancy' in v['vuln_type'].lower() for v in vulns)
     
     def test_reentrancy_safe_code(self, web3_analyzer):
         """Test that safe code doesn't trigger false positives."""
@@ -74,7 +74,7 @@ class TestWeb3Analyzer:
         """
         vulns = web3_analyzer.detect_reentrancy(safe_code)
         # Safe code may still be flagged but should be lower confidence
-        assert all(v.confidence < 0.9 for v in vulns) if vulns else True
+        assert all(v['confidence'] < 0.9 for v in vulns) if vulns else True
     
     def test_flash_loan_detection(self, web3_analyzer):
         """Test flash loan vulnerability detection."""
@@ -119,9 +119,9 @@ class TestWeb3Analyzer:
         }
         """
         result = web3_analyzer.analyze(code)
-        assert result['status'] == 'success'
-        assert 'vulnerabilities' in result
-        assert 'report' in result
+        assert result['status'] is True
+        assert 'vulnerabilities' in result['result']
+        assert 'report' in result['result']
     
     def test_run_function(self):
         """Test main run function."""
@@ -131,14 +131,14 @@ class TestWeb3Analyzer:
             'contract_code': 'contract Test {}',
             'mode': 'full',
         })
-        assert result['status'] == 'success'
+        assert result['status'] is True
     
     def test_run_missing_params(self):
         """Test run with missing parameters."""
         from skills.web3.run import run
         
         result = run({})
-        assert result['status'] == 'error'
+        assert result['status'] is False
 
 
 # =============================================================================
@@ -279,7 +279,7 @@ class TestAndroidAnalyzer:
             'target': manifest,
             'mode': 'manifest',
         })
-        assert 'status' in result
+        assert result['status'] is True
 
 
 # =============================================================================
@@ -349,7 +349,7 @@ class TestWebFuzzer:
     def test_run_function_missing_target(self):
         """Test run with missing target."""
         result = fuzzing_module.run({})
-        assert result['status'] == 'error'
+        assert result['status'] is False
 
 
 # =============================================================================
@@ -424,8 +424,9 @@ class TestWindowsExploitation:
             'mode': 'pattern',
             'arch': 'x86',
         })
-        assert result['status'] == 'success'
-        assert 'analysis' in result
+        assert result['status'] is True
+        assert 'result' in result
+        assert 'analysis' in result['result']
 
 
 # =============================================================================
@@ -524,13 +525,13 @@ class TestGHActionsExploitation:
             'target': workflow,
             'mode': 'analyze',
         })
-        assert result['status'] == 'success'
-        assert 'vulnerabilities' in result
+        assert result['status'] is True
+        assert 'vulnerabilities' in result['result']
     
     def test_run_missing_target(self):
         """Test run with missing target."""
         result = ghactions_module.run({})
-        assert result['status'] == 'error'
+        assert result['status'] is False
 
 
 # =============================================================================

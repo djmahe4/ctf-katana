@@ -2,7 +2,7 @@ import logging
 import argparse
 import sys
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 # Fix imports to use absolute paths from project root
@@ -12,56 +12,67 @@ from skills.web3.orchestrator import Web3Orchestrator
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def run(params: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Main entry point for Web3 Analyzer skill.
-    Delegates to Web3Orchestrator for multi-chain support.
-    """
-    target = params.get('target', '')
-    chain_type = params.get('chain_type', 'ethereum').lower()
-    network = params.get('network', 'mainnet').lower()
-    mode = params.get('mode', 'full').lower()
+class Web3Analyzer:
+    """Compatibility wrapper for Web3Orchestrator."""
+    def __init__(self):
+        self.orchestrator = Web3Orchestrator()
     
-    if not target:
-        # Try to infer target from 'file' or other common params if available
-        target = params.get('file', '')
-    
-    if not target:
-        return {
-            'status': 'error',
-            'message': 'target parameter required (contract file, address, or repo URL)',
-        }
-    
-    logger.info(f"Starting Web3 analysis: target={target}, chain={chain_type}, network={network}, mode={mode}")
-    
-    try:
-        orchestrator = Web3Orchestrator()
-        analysis_result = orchestrator.analyze({
-            "target": target,
-            "chain_type": chain_type,
-            "network": network,
-            "mode": mode
-        })
+    def analyze(self, target: str, mode: str = 'full') -> Dict[str, Any]:
+        """Runs the full analysis pipeline."""
+        params = {'target': target, 'mode': mode}
+        res = self.orchestrator.analyze(params)
         
-        if analysis_result.get("status") == "error":
-            return {
-                "status": "error",
-                "summary": f"Web3 analysis failed for {target}: {analysis_result.get('message')}",
-                "result": analysis_result
-            }
+        status = res.get("status") is True
+        summary = f"Web3 analysis completed for {target[:30]}..." if status else f"Analysis failed: {res.get('summary', 'Unknown error')}"
+        
+        # If the orchestrator returned a full dict (Web3AnalysisResult.to_dict()), use it as 'result'
+        # Otherwise, wrap what we have.
+        result_data = res
+        if not status and not result_data:
+            result_data = {}
 
         return {
-            "status": "success",
-            "summary": f"Web3 analysis completed for {target} ({chain_type}/{network})",
-            "result": analysis_result
+            "status": status,
+            "summary": summary,
+            "result": result_data
         }
-        
-    except Exception as e:
-        logger.error(f"Web3 analysis error: {e}", exc_info=True)
+
+    def detect_reentrancy(self, code: str) -> List[Any]:
+        """Detect reentrancy vulnerabilities."""
+        res = self.orchestrator.analyze({'target': code, 'mode': 'reentrancy'})
+        return res.get("vulnerabilities", [])
+    
+    def detect_flash_loan_vuln(self, code: str) -> List[Any]:
+        """Detect flash loan vulnerabilities."""
+        res = self.orchestrator.analyze({'target': code, 'mode': 'flashloan'})
+        return res.get("vulnerabilities", [])
+    
+    def detect_accounting_bugs(self, code: str) -> List[Any]:
+        """Detect accounting bugs."""
+        res = self.orchestrator.analyze({'target': code, 'mode': 'accounting'})
+        return res.get("vulnerabilities", [])
+
+def run(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute the Web3 analysis skill."""
+    target = params.get('target') or params.get('contract_code')
+    if not target:
         return {
-            'status': 'error',
-            'summary': f"Web3 analysis exception: {str(e)}",
-            'result': {'error_detail': str(e)}
+            'status': False,
+            'summary': 'target or contract_code parameter required',
+            'result': {}
+        }
+
+    try:
+        analyzer = Web3Analyzer()
+        res_data = analyzer.analyze(target, params.get('mode', 'full'))
+        
+        return res_data
+    except Exception as e:
+        logger.error(f"Web3 analysis error: {e}")
+        return {
+            'status': False,
+            'summary': f"Error: {str(e)}",
+            'result': {}
         }
 
 if __name__ == "__main__":
@@ -90,9 +101,9 @@ if __name__ == "__main__":
     
     if args.json:
         print(json.dumps(result, indent=2))
-        sys.exit(0 if result['status'] == 'success' else 1)
+        sys.exit(0 if result['status'] is True else 1)
 
-    if result.get("status") == "success":
+    if result.get("status") is True:
         res_data = result.get("result", {})
         print(res_data.get("report", "Analysis completed successfully (no report)."))
     else:

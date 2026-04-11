@@ -361,7 +361,7 @@ Interactive or explicit configuration:
    ```
    Error: Plugin {name} failed to install
    Action: Log error, continue with remaining plugins
-   Mark as partial success in output
+   Mark as status: false if critical components fail
    ```
 
 6. **Challenge Import Failed:**
@@ -377,49 +377,52 @@ Return comprehensive setup report:
 
 ```json
 {
-  "status": "success|partial|failed",
-  "ctfd_url": "http://localhost:8000",
-  "admin_credentials": {
-    "username": "admin",
-    "password": "admin",
-    "email": "admin@ctfd.local"
-  },
-  "api_token": "generated-token-or-null",
-  "event_config": {
-    "ctf_name": "Purple Engine CTF",
-    "user_mode": "teams",
-    "challenge_visibility": "private",
-    "start_time": null,
-    "end_time": null
-  },
-  "plugins_installed": ["CTFd-Whale"],
-  "plugins_failed": [],
-  "theme": "core",
-  "challenges_imported": 15,
-  "challenges_failed": 0,
-  "backup_path": "./backups/ctfd_backup_20260331_120000.sql",
-  "setup_log": [
-    "Docker check: OK",
-    "Port 8000 available: OK",
-    "Docker Compose up: Success",
-    "CTFd health check: Passed",
-    "Initial setup: Completed",
-    "API token: Generated",
-    "Plugin CTFd-Whale: Installed",
-    "Challenges imported: 15/15",
-    "Backup created: ./backups/..."
-  ],
-  "next_steps": [
-    "Access CTFd at http://localhost:8000",
-    "Login with admin credentials",
-    "Change default password in production",
-    "Configure email settings for password resets",
-    "Use purple-engine ctfd-solve to test challenges"
-  ],
-  "warnings": [
-    "Default admin password used - CHANGE IN PRODUCTION",
-    "HTTP only - configure HTTPS for production deployment"
-  ]
+  "status": true,
+  "summary": "CTFd instance successfully deployed and configured",
+  "result": {
+    "ctfd_url": "http://localhost:8000",
+    "admin_credentials": {
+      "username": "admin",
+      "password": "admin",
+      "email": "admin@ctfd.local"
+    },
+    "api_token": "generated-token-or-null",
+    "event_config": {
+      "ctf_name": "Purple Engine CTF",
+      "user_mode": "teams",
+      "challenge_visibility": "private",
+      "start_time": null,
+      "end_time": null
+    },
+    "plugins_installed": ["CTFd-Whale"],
+    "plugins_failed": [],
+    "theme": "core",
+    "challenges_imported": 15,
+    "challenges_failed": 0,
+    "backup_path": "./backups/ctfd_backup_20260331_120000.sql",
+    "setup_log": [
+      "Docker check: OK",
+      "Port 8000 available: OK",
+      "Docker Compose up: Success",
+      "CTFd health check: Passed",
+      "Initial setup: Completed",
+      "API token: Generated",
+      "Plugin CTFd-Whale: Installed",
+      "Challenges imported: 15/15",
+      "Backup created: ./backups/..."
+    ],
+    "next_steps": [
+      "Access CTFd at http://localhost:8000",
+      "Login with admin credentials",
+      "Change default password in production",
+      "Configure email settings for password resets",
+      "Use purple-engine ctfd-solve to test challenges"
+    ],
+    "warnings": [
+      "Default admin password used - CHANGE IN PRODUCTION",
+      "HTTP only - configure HTTPS for production deployment"
+    ]
+  }
 }
 ```
 

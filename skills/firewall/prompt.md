@@ -28,5 +28,23 @@ When in `scaffold` mode, you collaborate with the `web` skill to harden vulnerab
    - For all autonomous solve attempts, use the `KavachWrapper` context manager to ensure safe execution.
 4. **Validation**: Verify that generated policies (K8s/Docker) do not break the core functionality of the synthesized web server.
 
+## Output Format
+
+Always return a JSON object with this structure:
+```json
+{
+  "status": true,
+  "summary": "Brief summary of security architecture/containment status",
+  "result": {
+    "protection_mode": "containment | scaffold",
+    "tripwires_deployed": ["..."],
+    "hardening_config": {
+      "type": "nginx | k8s | docker",
+      "content": "..."
+    }
+  }
+}
+```
+
 ---
 *Kavach: Synthesize with Confidence, Solve with Safety.*

@@ -30,6 +30,9 @@ class WebHandler(FuzzerHandlerBase):
     """Handler for intelligent Web Fuzzing."""
 
     def analyze(self, target: str, **kwargs) -> FuzzRunResult:
+        return self.fuzz(target, **kwargs)
+
+    def fuzz(self, target: str, **kwargs) -> FuzzRunResult:
         mode = kwargs.get('mode', 'directory')
         payload_type = kwargs.get('payload_type', 'generic')
         wordlist = kwargs.get('wordlist')

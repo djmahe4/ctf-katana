@@ -67,7 +67,7 @@ class Finding:
 @dataclass
 class ResearchResult:
     """Result of a research operation."""
-    status: str  # success, error, partial
+    status: bool  # Standardized to boolean
     mode: str
     topic: str
     target: Optional[str]
@@ -319,7 +319,7 @@ and actionable security research. Always cite sources when possible and indicate
         duration = (datetime.utcnow() - start_time).total_seconds()
         
         return ResearchResult(
-            status="success",
+            status=True,
             mode=ResearchMode.RESEARCH.value,
             topic=topic,
             target=target,
@@ -363,7 +363,7 @@ Provide specific, actionable hunting methodologies. Focus on practical technique
         duration = (datetime.utcnow() - start_time).total_seconds()
         
         return ResearchResult(
-            status="success",
+            status=True,
             mode=ResearchMode.HUNT.value,
             topic=topic,
             target=target,
@@ -400,7 +400,7 @@ identify false positives, and provide clear reproduction steps for real vulnerab
         duration = (datetime.utcnow() - start_time).total_seconds()
         
         return ResearchResult(
-            status="success",
+            status=True,
             mode=ResearchMode.VALIDATE.value,
             topic=finding,
             target=None,
@@ -527,7 +527,7 @@ realistic challenges that teach security concepts without being trivially solvab
 """
         
         return ResearchResult(
-            status="success",
+            status=True,
             mode=ResearchMode.FULL_CYCLE.value,
             topic=topic,
             target=target,
@@ -557,7 +557,7 @@ realistic challenges that teach security concepts without being trivially solvab
         
         if not headers:
             print("[!] No cached vulnerabilities found. Please run a fetch first.")
-            return {"status": "error", "message": "No cache"}
+            return {"status": False, "summary": "No cached vulnerabilities found", "result": {"error": "No cache"}}
 
         print("\n--- Recent Vulnerabilities ---")
         for i, (cve_id, meta) in enumerate(headers.items()):
@@ -566,7 +566,7 @@ realistic challenges that teach security concepts without being trivially solvab
         print("\n[?] Which CVE would you like to explore? (Enter number or ID)")
         # In a real CLI, we'd take input here.
         # This logic will be driven by the user prompts in this session.
-        return {"status": "pending_selection", "candidates": headers}
+        return {"status": True, "summary": "Vulnerabilities pending selection", "result": {"candidates": headers, "action": "pending_selection"}}
 
 
 def run(params: Dict[str, Any]) -> Dict[str, Any]:

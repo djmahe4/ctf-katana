@@ -64,25 +64,30 @@ def run(params: dict) -> dict:
         if path:
             result = analyze_file(path)
             if "error" in result:
-                return {"status": "error", "summary": result["error"]}
+                return {"status": False, "summary": result["error"], "result": {"error": result["error"]}}
             return {
-                "status": "success",
+                "status": True,
                 "summary": f"Analyzed file: {path}",
                 "result": result
             }
         if data:
             result = identify_encoding(data)
             return {
-                "status": "success",
+                "status": True,
                 "summary": "Identified possible encodings in data.",
-                "result": result
+                "result": {"encodings": result}
             }
         return {
-            "status": "error",
-            "summary": "Provide 'path' or 'data' in params."
+            "status": False,
+            "summary": "Provide 'path' or 'data' in params.",
+            "result": {}
         }
     except Exception as exc:
-        return {"status": "error", "summary": str(exc)}
+        return {
+            "status": False, 
+            "summary": str(exc),
+            "result": {"error": str(exc)}
+        }
 
 if __name__ == "__main__":
     # Example standalone usage

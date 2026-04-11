@@ -20,11 +20,11 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     if action == "think":
         prompt = params.get('prompt')
         if not prompt:
-            return {'status': 'error', 'summary': '--prompt required for "think" action'}
+            return {'status': False, 'summary': '--prompt required for "think" action', 'result': {}}
         designer = WebDesigner(model=params.get('model'))
         # Designer logic usually involves agentic loop, returning a plan
         return {
-            'status': 'success', 
+            'status': True, 
             'summary': f"Brainstorming triggered for: {prompt}",
             'result': {'action': 'think'}
         }
@@ -33,14 +33,14 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         server_type = params.get('server_type')
         vuln_type = params.get('vuln_type')
         if not server_type or not vuln_type:
-            return {'status': 'error', 'summary': '--server-type and --vuln-type are required for synthesis'}
+            return {'status': False, 'summary': '--server-type and --vuln-type are required for synthesis', 'result': {}}
             
         output = params.get('output', 'output/synthesis')
         engine = WebSynthesisEngine(workspace_root=str(Path(__file__).resolve().parent))
         artifacts = engine.generate_challenge(server_type, vuln_type, output)
         
         return {
-            'status': 'success',
+            'status': True,
             'summary': f"Synthesized {server_type} challenge with {vuln_type} vulnerability",
             'result': {
                 'artifacts': artifacts
@@ -48,7 +48,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     if not target:
-        return {'status': 'error', 'summary': 'Target required'}
+        return {'status': False, 'summary': 'Target required', 'result': {}}
 
     # Auto-detect mode if needed
     if mode == "auto":
@@ -70,12 +70,12 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         elif mode == "access":
             handler = AccessHandler()
         else:
-            return {'status': 'error', 'summary': f"Unknown mode '{mode}'"}
+            return {'status': False, 'summary': f"Unknown mode '{mode}'", 'result': {}}
 
         result = handler.analyze(target, **params)
         
         return {
-            'status': 'success',
+            'status': True,
             'summary': result.summary,
             'result': {
                 'findings': [
@@ -93,7 +93,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as e:
         return {
-            'status': 'error', 
+            'status': False, 
             'summary': f"Web analysis failed: {str(e)}",
             'result': {'error_detail': str(e)}
         }
@@ -135,9 +135,9 @@ def main():
     
     if args.json:
         print(json.dumps(result, indent=2))
-        sys.exit(0 if result['status'] == 'success' else 1)
+        sys.exit(0 if result['status'] else 1)
 
-    if result['status'] == 'error':
+    if not result['status']:
         print(f"Error: {result['summary']}")
         sys.exit(1)
         
