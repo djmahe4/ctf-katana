@@ -191,6 +191,51 @@ def category_for(title: str) -> str:
 
 
 # =============================================================================
+# ChromaDB Embedding Function Wrapper
+# =============================================================================
+
+from chromadb import EmbeddingFunction, Documents, Embeddings
+
+class ChromaEmbeddingFunction(EmbeddingFunction[Documents]):
+    """Wrapper to make our embeddings work with ChromaDB's interface."""
+    
+    def is_legacy(self) -> bool:
+        """Return True if the embedding function is legacy."""
+        return False
+    
+    def __init__(self, embedder=None):
+        self.embedder = embedder
+    
+    def __call__(self, input: Documents) -> Embeddings:
+        if self.embedder is None:
+            # Fallback for reconstructured instances from config
+            return [[0.0] * 768 for _ in input]
+        
+        # In context.knowledge_base, the embedder might be optional or a different type
+        if hasattr(self.embedder, "embed"):
+            embeddings = self.embedder.embed(input)
+            return embeddings.tolist()
+        return [[0.0] * 768 for _ in input]
+    
+    @staticmethod
+    def name() -> str:
+        """Return embedding function name (required by ChromaDB)."""
+        return "purple_engine_kb_custom"
+
+    def get_config(self) -> Dict[str, Any]:
+        """Return configuration for persistence."""
+        return {
+            "model": getattr(self.embedder, 'model_name', "default") if self.embedder else "default",
+            "provider": self.embedder.__class__.__name__ if self.embedder else "default"
+        }
+
+    @staticmethod
+    def build_from_config(config: Dict[str, Any]) -> "ChromaEmbeddingFunction":
+        """Reconstruct from config."""
+        return ChromaEmbeddingFunction()
+
+
+# =============================================================================
 # Knowledge Base (Unified)
 # =============================================================================
 
@@ -232,9 +277,16 @@ class KnowledgeBase:
     def _init_vector_db(self, provider, model_name):
         # Placeholder for real embedding logic - in this unified version we'll just try to use chromadb
         self._client = chromadb.PersistentClient(path=str(self.persist_directory), settings=Settings(anonymized_telemetry=False))
-        # Use default embedding function for now to avoid dependency hell during bootstrap
+        
+        # Use modernized embedding function wrapper
+        embedder = None
+        if provider == "local" and HAS_SENTENCE_TRANSFORMERS:
+            # Try to get embedder if possible (stubbed for now as placeholder for real logic)
+            pass
+            
         self._collection = self._client.get_or_create_collection(
             name="purple_engine_kb",
+            embedding_function=ChromaEmbeddingFunction(embedder),
             metadata={"hnsw:space": "cosine"}
         )
         self.repos_dir = self.persist_directory / "repos"

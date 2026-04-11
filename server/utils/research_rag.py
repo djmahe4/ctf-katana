@@ -194,30 +194,49 @@ class OllamaEmbeddings:
 # ChromaDB Embedding Function Wrapper
 # =============================================================================
 
-class ChromaEmbeddingFunction:
+from chromadb import EmbeddingFunction, Documents, Embeddings
+
+class ChromaEmbeddingFunction(EmbeddingFunction[Documents]):
     """Wrapper to make our embeddings work with ChromaDB's interface."""
     
-    def __init__(self, embedder):
+    def is_legacy(self) -> bool:
+        """Return True if the embedding function is legacy."""
+        return False
+    
+    def __init__(self, embedder=None):
         self.embedder = embedder
     
-    def __call__(self, input: List[str]) -> List[List[float]]:
+    def __call__(self, input: Documents) -> Embeddings:
+        if self.embedder is None:
+            # Fallback for reconstructured instances from config
+            return [[0.0] * 768 for _ in input]
         embeddings = self.embedder.embed(input)
         return embeddings.tolist()
     
     def embed_documents(self, input: List[str]) -> List[List[float]]:
         """Embed documents (for adding to collection)."""
-        embeddings = self.embedder.embed(input)
-        return embeddings.tolist()
+        return self.__call__(input)
     
     def embed_query(self, input: List[str]) -> List[List[float]]:
         """Embed query (for searching)."""
-        embeddings = self.embedder.embed(input)
-        return embeddings.tolist()
+        return self.__call__(input)
     
-    def name(self) -> str:
+    @staticmethod
+    def name() -> str:
         """Return embedding function name (required by ChromaDB)."""
-        model_name = getattr(self.embedder, 'model_name', getattr(self.embedder, 'model', 'custom'))
-        return f"purple_engine_{model_name}"
+        return "purple_engine_custom"
+
+    def get_config(self) -> Dict[str, Any]:
+        """Return configuration for persistence."""
+        return {
+            "model": getattr(self.embedder, 'model_name', getattr(self.embedder, 'model', 'unknown')) if self.embedder else "unknown",
+            "provider": self.embedder.__class__.__name__ if self.embedder else "unknown"
+        }
+
+    @staticmethod
+    def build_from_config(config: Dict[str, Any]) -> "ChromaEmbeddingFunction":
+        """Reconstruct from config."""
+        return ChromaEmbeddingFunction()
 
 
 # =============================================================================
