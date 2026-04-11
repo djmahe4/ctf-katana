@@ -208,6 +208,9 @@ class AXMLReader:
     CHUNK_TYPE_END_TAG = 0x00100103
     CHUNK_TYPE_TEXT = 0x00100104
     
+    # Map from namespace URI to prefix
+    ANDROID_NS_URI = "http://schemas.android.com/apk/res/android"
+    
     MAX_STRING_POOL_SIZE = 10 * 1024 * 1024 # 10MB sanity limit
     MAX_STRING_COUNT = 100000
     MAX_STRING_LENGTH = 16384 # 16KB per string
@@ -218,6 +221,7 @@ class AXMLReader:
         self.strings = []
         self.result = []
         self.indent = 0
+        self.ns_map = {self.ANDROID_NS_URI: "android"} # Default mapping
         
     def _read_int(self) -> int:
         if self.pos + 4 > len(self.data):
@@ -253,7 +257,11 @@ class AXMLReader:
                 elif chunk_type == self.CHUNK_TYPE_START_TAG:
                     self._parse_start_tag()
                 elif chunk_type == self.CHUNK_TYPE_END_TAG:
-                   self._parse_end_tag()
+                    self._parse_end_tag()
+                elif chunk_type == self.CHUNK_TYPE_START_NS:
+                    self._parse_ns(True)
+                elif chunk_type == self.CHUNK_TYPE_END_NS:
+                    self._parse_ns(False)
                 
                 self.pos = chunk_end
             
@@ -319,6 +327,19 @@ class AXMLReader:
             except Exception:
                 self.strings.append("")
 
+    def _parse_ns(self, is_start: bool):
+        if self.pos + 16 > len(self.data): return
+        line_num = self._read_int()
+        comment_idx = self._read_int()
+        prefix_idx = self._read_int()
+        uri_idx = self._read_int()
+        
+        prefix = self._get_string(prefix_idx)
+        uri = self._get_string(uri_idx)
+        
+        if is_start and uri:
+            self.ns_map[uri] = prefix
+
     def _parse_start_tag(self):
         if self.pos + 20 > len(self.data): return
         line_num = self._read_int()
@@ -342,10 +363,14 @@ class AXMLReader:
             attr_val_idx = self._read_int()
             self.pos += 8 # Skip type and data
             
+            attr_ns_uri = self._get_string(attr_ns_idx)
             attr_name = self._get_string(attr_name_idx)
             attr_val = self._get_string(attr_val_idx)
+            
             if attr_name:
-                tag_str += f' {attr_name}="{attr_val}"'
+                prefix = self.ns_map.get(attr_ns_uri, "")
+                full_name = f"{prefix}:{attr_name}" if prefix else attr_name
+                tag_str += f' {full_name}="{attr_val}"'
             
         tag_str += ">\n"
         self.result.append(tag_str)

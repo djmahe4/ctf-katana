@@ -1,12 +1,19 @@
 import logging
-import random
-import time
+import asyncio
+import httpx
 from typing import Dict, List, Any, Optional, Generator, Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 from urllib.parse import urlparse, urlencode, parse_qs
 from pathlib import Path
 from datetime import datetime
+
+from skills.fuzzing.models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
+from skills.fuzzing.base import FuzzerHandlerBase
+
+import random
+import time
+from typing import Dict, List, Any, Optional, Generator, Callable
+from urllib.parse import urlparse, urlencode, parse_qs
+from pathlib import Path
 
 from skills.fuzzing.models import FuzzRunResult, FuzzCategory, FuzzFinding, FuzzerSeverity
 from skills.fuzzing.base import FuzzerHandlerBase
@@ -35,21 +42,20 @@ class WebHandler(FuzzerHandlerBase):
         return self.fuzz(target, **kwargs)
 
     def fuzz(self, target: str, **kwargs) -> FuzzRunResult:
+        return asyncio.run(self._fuzz_async(target, **kwargs))
+
+    async def _fuzz_async(self, target: str, **kwargs) -> FuzzRunResult:
         mode = kwargs.get('mode', 'directory')
         payload_type = kwargs.get('payload_type', 'generic')
         wordlist = kwargs.get('wordlist')
         max_requests = kwargs.get('max_requests', 100)
         rate_limit = kwargs.get('rate_limit', 0.0)
         timeout = kwargs.get('timeout', 10)
-        max_workers = kwargs.get('max_workers', 10)
+        max_workers = kwargs.get('max_workers', 20) # Default higher for async
 
         result = self.create_empty_result(FuzzCategory.WEB, target)
-        session = self._get_requests_session()
         
         payload_gen = self._get_payloads(payload_type, wordlist)
-        baseline = None
-        
-        # Take a slice of payloads based on max_requests
         payloads = []
         for p in payload_gen:
             payloads.append(p)
@@ -60,44 +66,46 @@ class WebHandler(FuzzerHandlerBase):
             result.summary = "No payloads available to fuzz."
             return result
 
-        # 1. Establish baseline synchronously with the first payload (or a generic one)
-        # We'll use the first request as a baseline if it's not provided
-        try:
-            first_payload = payloads[0]
-            url = self._build_url(target, first_payload, mode)
-            headers = {'User-Agent': random.choice(USER_AGENTS)}
-            response = session.get(url, headers=headers, timeout=timeout, allow_redirects=False)
-            baseline = {'status_code': response.status_code, 'content_length': len(response.text)}
-            logger.debug(f"Established baseline for {target}: {baseline}")
-        except Exception as e:
-            logger.error(f"Failed to establish baseline for {target}: {e}")
-            # Fallback baseline
-            baseline = {'status_code': 404, 'content_length': 0}
-
-        findings_lock = threading.Lock()
-        
-        def do_request(payload: str):
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            # 1. Establish baseline
             try:
-                url = self._build_url(target, payload, mode)
+                first_payload = payloads[0]
+                url = self._build_url(target, first_payload, mode)
                 headers = {'User-Agent': random.choice(USER_AGENTS)}
-                
-                start_time = time.time()
-                response = session.get(url, headers=headers, timeout=timeout, allow_redirects=False)
-                elapsed = time.time() - start_time
-                
-                analysis = self._analyze_response(response, payload, elapsed, baseline)
-                if analysis:
-                    with findings_lock:
-                        result.findings.append(analysis)
-                
-                if rate_limit > 0:
-                    time.sleep(rate_limit)
+                response = await client.get(url, headers=headers)
+                baseline = {
+                    'status_code': response.status_code, 
+                    'content_length': len(response.text)
+                }
+                logger.debug(f"Established baseline for {target}: {baseline}")
             except Exception as e:
-                logger.debug(f"Request error for {payload}: {e}")
+                logger.error(f"Failed to establish baseline for {target}: {e}")
+                baseline = {'status_code': 404, 'content_length': 0}
 
-        # 2. Parallelize the rest
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            executor.map(do_request, payloads)
+            semaphore = asyncio.Semaphore(max_workers)
+
+            async def do_request(payload: str):
+                async with semaphore:
+                    try:
+                        url = self._build_url(target, payload, mode)
+                        headers = {'User-Agent': random.choice(USER_AGENTS)}
+                        
+                        start_time = time.time()
+                        response = await client.get(url, headers=headers)
+                        elapsed = time.time() - start_time
+                        
+                        analysis = self._analyze_response(response, payload, elapsed, baseline)
+                        if analysis:
+                            result.findings.append(analysis)
+                        
+                        if rate_limit > 0:
+                            await asyncio.sleep(rate_limit)
+                    except Exception as e:
+                        logger.debug(f"Request error for {payload}: {e}")
+
+            # 2. Execute parallel requests
+            tasks = [do_request(p) for p in payloads]
+            await asyncio.gather(*tasks)
             
         result.statistics = {
             "total_requests": len(payloads),
