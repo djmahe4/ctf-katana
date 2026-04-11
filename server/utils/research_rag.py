@@ -398,12 +398,17 @@ class ResearchRAG:
         logger.info(f"Collection: {collection_name}, Documents: {self._collection.count()}")
     
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into overlapping chunks."""
-        # Clean text
-        text = re.sub(r'\s+', ' ', text).strip()
-        
+        """Split text into overlapping chunks while preserving formatting and code blocks."""
+        if not text:
+            return []
+            
+        # Detect fenced code blocks (``` ... ```)
+        code_blocks = []
+        for match in re.finditer(r'```[\s\S]*?```', text):
+            code_blocks.append((match.start(), match.end()))
+            
         if len(text) <= self.chunk_size:
-            return [text] if text else []
+            return [text.strip()]
         
         chunks = []
         start = 0
@@ -411,22 +416,42 @@ class ResearchRAG:
         while start < len(text):
             end = start + self.chunk_size
             
-            # Try to break at sentence boundary
+            # Try to break at a natural boundary (paragraph, line, or sentence)
             if end < len(text):
-                # Look for sentence end near chunk boundary
-                for sep in ['. ', '.\n', '! ', '? ', '\n\n']:
-                    last_sep = text.rfind(sep, start + self.chunk_size // 2, end)
-                    if last_sep != -1:
-                        end = last_sep + len(sep)
+                # Check if we are mid-code-block
+                inside_block = False
+                for b_start, b_end in code_blocks:
+                    if b_start < end < b_end:
+                        # If the block is small enough to fit in a chunk, cut at b_start
+                        if (b_end - b_start) <= self.chunk_size:
+                            end = b_start
+                            inside_block = True
+                        else:
+                            # Block too large, we must split it. Favor newlines inside.
+                            inside_block = False 
                         break
+                
+                if not inside_block:
+                    found_sep = False
+                    # Priority for splitting: Paragraph > Line > Sentence > Space
+                    for sep in ['\n\n', '\n', '. ', '! ', '? ', ' ']:
+                        search_start = start + int(self.chunk_size * 0.7)
+                        last_sep = text.rfind(sep, search_start, end)
+                        if last_sep != -1:
+                            end = last_sep + len(sep)
+                            found_sep = True
+                            break
+                    
+                    if not found_sep:
+                        end = start + self.chunk_size
             
             chunk = text[start:end].strip()
             if chunk:
                 chunks.append(chunk)
             
-            # Move start with overlap
-            start = end - self.chunk_overlap
-            if start >= len(text) - self.chunk_overlap:
+            # Move start with overlap, ensure progress
+            start = max(end - self.chunk_overlap, start + 1)
+            if start >= len(text):
                 break
         
         return chunks

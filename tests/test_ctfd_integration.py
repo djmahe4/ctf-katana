@@ -61,8 +61,8 @@ class TestCTFdAPIClient:
         # Mock API responses
         mock_session.get.return_value.json.return_value = {
             'data': [
-                {'id': 1, 'name': 'Challenge 1'},
-                {'id': 2, 'name': 'Challenge 2'}
+                {'id': 1, 'name': 'Challenge 1', 'category': 'crypto'},
+                {'id': 2, 'name': 'Challenge 2', 'category': 'web'}
             ]
         }
         mock_session.get.return_value.raise_for_status = Mock()

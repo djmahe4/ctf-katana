@@ -193,6 +193,175 @@ class AndroidAnalysisResult:
     duration: float = 0.0
 
 
+class AXMLReader:
+    """
+    Lightweight self-contained Android Binary XML (AXML) parser.
+    Decodes AndroidManifest.xml into readable XML text.
+    Hardened with bounds checking and sanity limits.
+    """
+    
+    CHUNK_TYPE_STRINGS = 0x001C0001
+    CHUNK_TYPE_RESOURCES = 0x00080180
+    CHUNK_TYPE_START_NS = 0x00100100
+    CHUNK_TYPE_END_NS = 0x00100101
+    CHUNK_TYPE_START_TAG = 0x00100102
+    CHUNK_TYPE_END_TAG = 0x00100103
+    CHUNK_TYPE_TEXT = 0x00100104
+    
+    MAX_STRING_POOL_SIZE = 10 * 1024 * 1024 # 10MB sanity limit
+    MAX_STRING_COUNT = 100000
+    MAX_STRING_LENGTH = 16384 # 16KB per string
+    
+    def __init__(self, data: bytes):
+        self.data = data
+        self.pos = 8
+        self.strings = []
+        self.result = []
+        self.indent = 0
+        
+    def _read_int(self) -> int:
+        if self.pos + 4 > len(self.data):
+            raise EOFError("Unexpected end of binary data")
+        val = int.from_bytes(self.data[self.pos:self.pos+4], 'little')
+        self.pos += 4
+        return val
+
+    def _get_string(self, idx: int) -> str:
+        if 0 <= idx < len(self.strings):
+            return self.strings[idx]
+        return ""
+
+    def decode(self) -> str:
+        try:
+            total_size = len(self.data)
+            if total_size < 8:
+                return "<!-- ERROR: APK Manifest too small -->"
+                
+            while self.pos + 8 <= total_size:
+                chunk_start = self.pos - 8 # Type was already read to count as chunk
+                chunk_type = self._read_int()
+                chunk_size = self._read_int()
+                
+                # Sanity check chunk size
+                if chunk_size < 8 or self.pos - 8 + chunk_size > total_size:
+                    break
+                    
+                chunk_end = self.pos - 8 + chunk_size
+                
+                if chunk_type == self.CHUNK_TYPE_STRINGS:
+                    self._parse_string_pool(chunk_size)
+                elif chunk_type == self.CHUNK_TYPE_START_TAG:
+                    self._parse_start_tag()
+                elif chunk_type == self.CHUNK_TYPE_END_TAG:
+                   self._parse_end_tag()
+                
+                self.pos = chunk_end
+            
+            return "".join(self.result)
+        except Exception as e:
+            logger.error(f"AXML decode error: {e}")
+            return f"<!-- FAILED TO DECODE AXML: {str(e)[:100]} -->"
+
+    def _parse_string_pool(self, chunk_size: int):
+        if chunk_size > self.MAX_STRING_POOL_SIZE:
+            raise ValueError("String pool too large")
+            
+        string_count = self._read_int()
+        style_count = self._read_int()
+        flags = self._read_int()
+        string_start = self._read_int()
+        style_start = self._read_int()
+        
+        if string_count > self.MAX_STRING_COUNT:
+            string_count = self.MAX_STRING_COUNT
+            
+        offsets = []
+        for _ in range(string_count):
+            if self.pos + 4 > len(self.data): break
+            offsets.append(self._read_int())
+            
+        base = self.pos - (len(offsets) * 4 + 20) + string_start
+        is_utf8 = (flags & 0x0100) != 0
+        
+        for offset in offsets:
+            pos = base + offset
+            if pos >= len(self.data):
+                self.strings.append("")
+                continue
+                
+            try:
+                if is_utf8:
+                    # UTF-8: length in bytes, then data
+                    # Length can be 1 or 2 bytes
+                    u16len = self.data[pos]
+                    if u16len & 0x80: pos += 2
+                    else: pos += 1
+                    if pos >= len(self.data): break
+                    
+                    u8len = self.data[pos]
+                    if u8len & 0x80: pos += 2
+                    else: pos += 1
+                    
+                    length = min(u8len, self.MAX_STRING_LENGTH)
+                    if pos + length > len(self.data): length = len(self.data) - pos
+                    s = self.data[pos:pos+length].decode('utf-8', 'ignore')
+                else:
+                    # UTF-16: length in characters, then data (2 bytes per char)
+                    if pos + 2 > len(self.data): break
+                    u16len = int.from_bytes(self.data[pos:pos+2], 'little')
+                    if u16len & 0x8000: pos += 4
+                    else: pos += 2
+                    
+                    length = min(u16len * 2, self.MAX_STRING_LENGTH)
+                    if pos + length > len(self.data): length = len(self.data) - pos
+                    s = self.data[pos:pos+length].decode('utf-16le', 'ignore')
+                self.strings.append(s)
+            except Exception:
+                self.strings.append("")
+
+    def _parse_start_tag(self):
+        if self.pos + 20 > len(self.data): return
+        line_num = self._read_int()
+        comment_idx = self._read_int()
+        ns_idx = self._read_int()
+        name_idx = self._read_int()
+        attr_start = self._read_int()
+        attr_size = self._read_int()
+        attr_count = self._read_int()
+        
+        name = self._get_string(name_idx)
+        tag_str = f"{'  ' * self.indent}<{name}"
+        
+        # Skip to attribute start
+        self.pos += 4 
+        
+        for _ in range(min(attr_count, 100)): # Sanity limit on attributes
+            if self.pos + 20 > len(self.data): break
+            attr_ns_idx = self._read_int()
+            attr_name_idx = self._read_int()
+            attr_val_idx = self._read_int()
+            self.pos += 8 # Skip type and data
+            
+            attr_name = self._get_string(attr_name_idx)
+            attr_val = self._get_string(attr_val_idx)
+            if attr_name:
+                tag_str += f' {attr_name}="{attr_val}"'
+            
+        tag_str += ">\n"
+        self.result.append(tag_str)
+        self.indent += 1
+
+    def _parse_end_tag(self):
+        self.indent = max(0, self.indent - 1)
+        if self.pos + 16 > len(self.data): return
+        line_num = self._read_int()
+        comment_idx = self._read_int()
+        ns_idx = self._read_int()
+        name_idx = self._read_int()
+        name = self._get_string(name_idx)
+        self.result.append(f"{'  ' * self.indent}</{name}>\n")
+
+
 class AndroidAnalyzer:
     """
     Android Application Security Analyzer.
@@ -217,37 +386,41 @@ class AndroidAnalyzer:
         return f"ANDROID-{datetime.utcnow().strftime('%Y%m%d')}-{self.vuln_counter:04d}"
     
     def _extract_manifest(self, apk_path: Path) -> Optional[str]:
-        """Extract AndroidManifest.xml from APK."""
+        """Extract and decode AndroidManifest.xml from APK."""
         try:
             with zipfile.ZipFile(apk_path, 'r') as zf:
-                # AndroidManifest.xml in APK is binary XML
-                # For now, return raw or use aapt/apktool
                 if 'AndroidManifest.xml' in zf.namelist():
-                    return zf.read('AndroidManifest.xml').decode('utf-8', errors='ignore')
+                    data = zf.read('AndroidManifest.xml')
+                    # Use AXMLReader for binary XML
+                    reader = AXMLReader(data)
+                    return reader.decode()
         except Exception as e:
             logger.warning(f"Error extracting manifest: {e}")
         return None
     
     def _extract_dex_strings(self, apk_path: Path) -> List[str]:
-        """Extract strings from DEX files."""
-        strings = []
+        """Extract strings from DEX files using regex (high performance) with safety limits."""
+        strings = set() # Use set for uniqueness
+        # Safety ceiling (per DEX file) to avoid OOM
+        MAX_DEX_SIZE = 50 * 1024 * 1024 # 50MB
         try:
             with zipfile.ZipFile(apk_path, 'r') as zf:
                 for name in zf.namelist():
                     if name.endswith('.dex'):
                         content = zf.read(name)
-                        # Simple string extraction
-                        current = []
-                        for byte in content:
-                            if 32 <= byte < 127:
-                                current.append(chr(byte))
-                            else:
-                                if len(current) >= 6:
-                                    strings.append(''.join(current))
-                                current = []
+                        if len(content) > MAX_DEX_SIZE:
+                            logger.warning(f"DEX file {name} too large ({len(content)} bytes), skipping")
+                            continue
+                        # High-performance regex extraction
+                        found = re.findall(b'[\x20-\x7E]{6,}', content)
+                        for s in found:
+                            try:
+                                strings.add(s.decode('ascii'))
+                            except UnicodeDecodeError:
+                                continue
         except Exception as e:
             logger.warning(f"Error extracting DEX strings: {e}")
-        return strings[:5000]  # Limit
+        return list(strings)[:10000]
     
     def _parse_manifest_basic(self, manifest_content: str) -> Dict[str, Any]:
         """Parse basic manifest info from text."""

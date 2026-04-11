@@ -154,6 +154,7 @@ class CTFdAPIClient:
             logger.error(f"Login error: {e}")
             return False
     
+
     def _extract_nonce(self, html: str) -> str:
         """Extract CSRF nonce from HTML page"""
         # Simple extraction - in production use BeautifulSoup
@@ -166,48 +167,89 @@ class CTFdAPIClient:
     def _get_user_info(self) -> Optional[Dict]:
         """Get current user information"""
         try:
-            response = self.session.get(f'{self.base_url}/api/v1/users/me')
-            response.raise_for_status()
-            return response.json()['data']
+            response = self._make_request('GET', '/api/v1/users/me')
+            return response.get('data')
         except Exception as e:
             logger.warning(f"Could not get user info: {e}")
             return None
+
+    def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+        """
+        Helper method to make authenticated requests to CTFd API.
+        
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint (e.g., /api/v1/challenges)
+            **kwargs: Additional arguments for requests.request
+            
+        Returns:
+            JSON response as dictionary. CTFd usually returns {"success": true, "data": ...}
+        """
+        url = f"{self.base_url}{endpoint}"
+        try:
+            method_func = getattr(self.session, method.lower())
+            response = method_func(url, **kwargs)
+            response.raise_for_status()
+            
+            # Check if response is empty
+            if not response.text:
+                return {"success": True, "data": {}}
+                
+            data = response.json()
+            if isinstance(data, dict) and 'success' not in data:
+                data['success'] = True
+            return data
+        except requests.exceptions.RequestException as e:
+            # Handle HTTP errors and connection issues
+            status_code = getattr(e.response, "status_code", "Unknown")
+            error_data = {}
+            try:
+                if e.response is not None:
+                    error_data = e.response.json()
+            except Exception:
+                pass
+                
+            msg = error_data.get("message", str(e))
+            logger.error(f"API request failed: {method} {endpoint} - Status {status_code} - {msg}")
+            return {"success": False, "message": msg, "status_code": status_code}
+        except Exception as e:
+            logger.error(f"Unexpected error in API request: {method} {endpoint} - {e}")
+            return {"success": False, "message": str(e)}
     
     # ==================== Challenge Operations ====================
     
-    def list_challenges(self, category: str = None, visible_only: bool = True) -> List[CTFdChallenge]:
+    def list_challenges(self, force_detail: bool = False) -> List[CTFdChallenge]:
         """
-        List all challenges.
+        List all challenges from the CTFd instance.
         
         Args:
-            category: Filter by category (optional)
-            visible_only: Only return visible challenges (default: True)
-            
-        Returns:
-            List of CTFdChallenge objects
+            force_detail: If True, perform an additional GET for each challenge to fetch full metadata.
+                         Default is False to avoid N+1 request performance bottlenecks.
         """
-        try:
-            response = self.session.get(f'{self.base_url}/api/v1/challenges')
-            response.raise_for_status()
-            data = response.json()
-            
-            challenges = []
-            for item in data.get('data', []):
-                # Get full challenge details
-                challenge = self.get_challenge(item['id'])
-                if challenge:
-                    # Apply filters
-                    if category and challenge.category != category:
-                        continue
-                    if visible_only and challenge.state != 'visible':
-                        continue
-                    challenges.append(challenge)
-            
-            return challenges
-            
-        except Exception as e:
-            logger.error(f"Error listing challenges: {e}")
+        response = self._make_request("GET", "/api/v1/challenges")
+        if not response.get("success"):
             return []
+            
+        challenges_data = response.get("data", [])
+        
+        challenges = []
+        for chal_data in challenges_data:
+            if force_detail:
+                chal = self.get_challenge(chal_data["id"])
+                if chal:
+                    challenges.append(chal)
+            else:
+                # Create a challenge object from summary data to ensure consistent return type
+                challenges.append(CTFdChallenge(
+                    id=chal_data['id'],
+                    name=chal_data['name'],
+                    category=chal_data.get('category', ''),
+                    value=chal_data.get('value', 100),
+                    state=chal_data.get('state', 'visible'),
+                    type=chal_data.get('type', 'standard')
+                ))
+                
+        return challenges
     
     def get_challenge(self, challenge_id: int) -> Optional[CTFdChallenge]:
         """
@@ -219,28 +261,27 @@ class CTFdAPIClient:
         Returns:
             CTFdChallenge object or None
         """
-        try:
-            response = self.session.get(f'{self.base_url}/api/v1/challenges/{challenge_id}')
-            response.raise_for_status()
-            data = response.json()['data']
-            
-            return CTFdChallenge(
-                id=data['id'],
-                name=data['name'],
-                category=data.get('category', ''),
-                description=data.get('description', ''),
-                value=data.get('value', 100),
-                state=data.get('state', 'visible'),
-                type=data.get('type', 'standard'),
-                files=[f['location'] for f in data.get('files', [])],
-                tags=[t['value'] for t in data.get('tags', [])],
-                hints=data.get('hints', []),
-                requirements=data.get('requirements', {}).get('prerequisites', [])
-            )
-            
-        except Exception as e:
-            logger.error(f"Error getting challenge {challenge_id}: {e}")
+        response_data = self._make_request("GET", f"/api/v1/challenges/{challenge_id}")
+        if not response_data.get("success"):
             return None
+            
+        data = response_data.get("data", {})
+        if not data:
+            return None
+            
+        return CTFdChallenge(
+            id=data['id'],
+            name=data['name'],
+            category=data.get('category', ''),
+            description=data.get('description', ''),
+            value=data.get('value', 100),
+            state=data.get('state', 'visible'),
+            type=data.get('type', 'standard'),
+            files=[f['location'] for f in data.get('files', [])],
+            tags=[t['value'] for t in data.get('tags', [])],
+            hints=data.get('hints', []),
+            requirements=data.get('requirements', {}).get('prerequisites', [])
+        )
     
     def create_challenge(self, challenge: CTFdChallenge) -> Optional[int]:
         """
@@ -252,25 +293,20 @@ class CTFdAPIClient:
         Returns:
             Challenge ID if successful, None otherwise
         """
-        try:
-            response = self.session.post(
-                f'{self.base_url}/api/v1/challenges',
-                json=challenge.to_dict()
-            )
-            response.raise_for_status()
-            challenge_id = response.json()['data']['id']
+        response_data = self._make_request("POST", "/api/v1/challenges", json=challenge.to_dict())
+        if not response_data.get("success"):
+            return None
+            
+        challenge_id = response_data.get("data", {}).get("id")
+        if challenge_id:
             logger.info(f"Created challenge '{challenge.name}' with ID {challenge_id}")
             
             # Add flags if provided
             if challenge.flags:
                 for flag in challenge.flags:
                     self.add_flag(challenge_id, flag.get('content', ''), flag.get('type', 'static'))
-            
-            return challenge_id
-            
-        except Exception as e:
-            logger.error(f"Error creating challenge: {e}")
-            return None
+                    
+        return challenge_id
     
     def update_challenge(self, challenge_id: int, updates: Dict[str, Any]) -> bool:
         """
@@ -283,18 +319,11 @@ class CTFdAPIClient:
         Returns:
             True if successful
         """
-        try:
-            response = self.session.patch(
-                f'{self.base_url}/api/v1/challenges/{challenge_id}',
-                json=updates
-            )
-            response.raise_for_status()
+        response_data = self._make_request("PATCH", f"/api/v1/challenges/{challenge_id}", json=updates)
+        if response_data.get("success"):
             logger.info(f"Updated challenge {challenge_id}")
             return True
-            
-        except Exception as e:
-            logger.error(f"Error updating challenge {challenge_id}: {e}")
-            return False
+        return False
     
     def delete_challenge(self, challenge_id: int) -> bool:
         """
@@ -306,15 +335,11 @@ class CTFdAPIClient:
         Returns:
             True if successful
         """
-        try:
-            response = self.session.delete(f'{self.base_url}/api/v1/challenges/{challenge_id}')
-            response.raise_for_status()
+        response_data = self._make_request("DELETE", f"/api/v1/challenges/{challenge_id}")
+        if response_data.get("success"):
             logger.info(f"Deleted challenge {challenge_id}")
             return True
-            
-        except Exception as e:
-            logger.error(f"Error deleting challenge {challenge_id}: {e}")
-            return False
+        return False
     
     # ==================== Flag Operations ====================
     
@@ -330,25 +355,18 @@ class CTFdAPIClient:
         Returns:
             True if successful
         """
-        try:
-            flag_data = {
-                'challenge_id': challenge_id,
-                'content': flag_content,
-                'type': flag_type,
-                'data': ''  # Additional data for regex flags
-            }
-            
-            response = self.session.post(
-                f'{self.base_url}/api/v1/flags',
-                json=flag_data
-            )
-            response.raise_for_status()
+        flag_data = {
+            'challenge_id': challenge_id,
+            'content': flag_content,
+            'type': flag_type,
+            'data': ''  # Additional data for regex flags
+        }
+        
+        response_data = self._make_request("POST", "/api/v1/flags", json=flag_data)
+        if response_data.get("success"):
             logger.info(f"Added flag to challenge {challenge_id}")
             return True
-            
-        except Exception as e:
-            logger.error(f"Error adding flag: {e}")
-            return False
+        return False
     
     def submit_flag(self, challenge_id: int, flag: str) -> CTFdSubmission:
         """
@@ -361,21 +379,17 @@ class CTFdAPIClient:
         Returns:
             CTFdSubmission object with result
         """
-        try:
-            submission_data = {
-                'challenge_id': challenge_id,
-                'submission': flag
-            }
-            
-            response = self.session.post(
-                f'{self.base_url}/api/v1/challenges/attempt',
-                json=submission_data
-            )
-            response.raise_for_status()
-            data = response.json()['data']
-            
+        submission_data = {
+            'challenge_id': challenge_id,
+            'submission': flag
+        }
+        
+        response_data = self._make_request("POST", "/api/v1/challenges/attempt", json=submission_data)
+        
+        if response_data.get("success"):
+            data = response_data.get("data", {})
             result = CTFdSubmission(
-                correct=(data['status'] == 'correct'),
+                correct=(data.get('status') == 'correct'),
                 message=data.get('message', ''),
                 challenge_id=challenge_id,
                 timestamp=datetime.now()
@@ -385,17 +399,16 @@ class CTFdAPIClient:
                 logger.info(f"CORRECT flag submitted for challenge {challenge_id}")
             else:
                 logger.warning(f"INCORRECT flag for challenge {challenge_id}: {result.message}")
-            
+                
             return result
-            
-        except Exception as e:
-            logger.error(f"Error submitting flag: {e}")
+        else:
             return CTFdSubmission(
                 correct=False,
-                message=f"Submission error: {str(e)}",
+                message=response_data.get("message", "Submission failed"),
                 challenge_id=challenge_id,
                 timestamp=datetime.now()
             )
+        
     
     # ==================== File Operations ====================
     
@@ -413,14 +426,17 @@ class CTFdAPIClient:
         try:
             with open(file_path, 'rb') as f:
                 files = {'file': f}
-                response = self.session.post(
-                    f'{self.base_url}/api/v1/files',
+                response_data = self._make_request(
+                    "POST", 
+                    "/api/v1/files", 
                     files=files,
                     data={'challenge_id': challenge_id, 'type': 'challenge'}
                 )
-            response.raise_for_status()
-            logger.info(f"Uploaded file to challenge {challenge_id}")
-            return True
+            
+            if response_data.get("success"):
+                logger.info(f"Uploaded file to challenge {challenge_id}")
+                return True
+            return False
             
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
@@ -457,6 +473,7 @@ class CTFdAPIClient:
     
     # ==================== Team/Scoreboard Operations ====================
     
+
     def get_scoreboard(self, count: int = 10) -> List[Dict]:
         """Get top teams from scoreboard"""
         try:

@@ -1,7 +1,9 @@
 import logging
 import random
 import time
-from typing import Dict, List, Any, Optional, Generator
+from typing import Dict, List, Any, Optional, Generator, Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from urllib.parse import urlparse, urlencode, parse_qs
 from pathlib import Path
 from datetime import datetime
@@ -39,6 +41,7 @@ class WebHandler(FuzzerHandlerBase):
         max_requests = kwargs.get('max_requests', 100)
         rate_limit = kwargs.get('rate_limit', 0.0)
         timeout = kwargs.get('timeout', 10)
+        max_workers = kwargs.get('max_workers', 10)
 
         result = self.create_empty_result(FuzzCategory.WEB, target)
         session = self._get_requests_session()
@@ -46,11 +49,34 @@ class WebHandler(FuzzerHandlerBase):
         payload_gen = self._get_payloads(payload_type, wordlist)
         baseline = None
         
-        count = 0
-        for payload in payload_gen:
-            if count >= max_requests:
+        # Take a slice of payloads based on max_requests
+        payloads = []
+        for p in payload_gen:
+            payloads.append(p)
+            if len(payloads) >= max_requests:
                 break
-            
+        
+        if not payloads:
+            result.summary = "No payloads available to fuzz."
+            return result
+
+        # 1. Establish baseline synchronously with the first payload (or a generic one)
+        # We'll use the first request as a baseline if it's not provided
+        try:
+            first_payload = payloads[0]
+            url = self._build_url(target, first_payload, mode)
+            headers = {'User-Agent': random.choice(USER_AGENTS)}
+            response = session.get(url, headers=headers, timeout=timeout, allow_redirects=False)
+            baseline = {'status_code': response.status_code, 'content_length': len(response.text)}
+            logger.debug(f"Established baseline for {target}: {baseline}")
+        except Exception as e:
+            logger.error(f"Failed to establish baseline for {target}: {e}")
+            # Fallback baseline
+            baseline = {'status_code': 404, 'content_length': 0}
+
+        findings_lock = threading.Lock()
+        
+        def do_request(payload: str):
             try:
                 url = self._build_url(target, payload, mode)
                 headers = {'User-Agent': random.choice(USER_AGENTS)}
@@ -59,25 +85,25 @@ class WebHandler(FuzzerHandlerBase):
                 response = session.get(url, headers=headers, timeout=timeout, allow_redirects=False)
                 elapsed = time.time() - start_time
                 
-                if baseline is None:
-                    baseline = {'status_code': response.status_code, 'content_length': len(response.text)}
-
                 analysis = self._analyze_response(response, payload, elapsed, baseline)
                 if analysis:
-                    result.findings.append(analysis)
+                    with findings_lock:
+                        result.findings.append(analysis)
                 
-                count += 1
                 if rate_limit > 0:
                     time.sleep(rate_limit)
-
             except Exception as e:
                 logger.debug(f"Request error for {payload}: {e}")
+
+        # 2. Parallelize the rest
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            executor.map(do_request, payloads)
             
         result.statistics = {
-            "total_requests": count,
+            "total_requests": len(payloads),
             "findings_count": len(result.findings)
         }
-        result.summary = f"Web fuzzing complete. Probed {count} paths, found {len(result.findings)} interesting responses."
+        result.summary = f"Web fuzzing complete. Probed {len(payloads)} paths, found {len(result.findings)} interesting responses."
         return result
 
     def _get_payloads(self, payload_type: str, wordlist: Optional[str]) -> Generator[str, None, None]:

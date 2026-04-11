@@ -27,4 +27,8 @@ class ArithmeticObfuscator(BaseObfuscator):
         return ", ".join(res)
 
     def decrypt_logic(self, var_name: str, **kwargs) -> str:
-        return f"{var_name} = ''.join(chr(eval(x)) for x in {var_name}.split(', '))"
+        return (f"import re\n"
+                f"def __safe_arith(x):\n"
+                f"    m = re.match(r'\\(\\s*(\\d+)\\s*\\*\\s*2\\s*\\+\\s*(\\d+)\\s*\\)', x.strip())\n"
+                f"    return chr(int(m.group(1)) * 2 + int(m.group(2))) if m else ''\n"
+                f"{var_name} = ''.join(__safe_arith(x) for x in {var_name}.split(', '))")
