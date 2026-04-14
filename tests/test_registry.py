@@ -13,15 +13,16 @@ class TestRegistry:
     def test_discover_all_skills(self):
         skills = discover_skills(SKILLS_DIR)
         expected = {
-            "analysis", "android-analyzer", "binary_exploit", "challenge-gen", 
-            "chrome-scraper", "crypto_solver", "ctfd_manage", "ctfd_setup", 
-            "ctfd_solve", "ctftime", "exploit_gen", "flagger", "forensics", 
-            "fuzzing", "ghactions-exploitation", "iot-analyzer", "kavach_shield", 
-            "kavach_wrapper", "merger", "purple-loop-orchestrator", "recon", 
-            "research-agent", "research-rag", "research-swarm", 
-            "research-youtube-ocr", "reverse", "reverse_engineering", 
-            "stego_solver", "superpowers", "vuln-discovery", "web", 
-            "web3-analyzer", "web_exploit (DEPRECATED)", "windows-exploitation", 
+            "analysis", "android-analyzer", "binary_exploit", "bug_hunting",
+            "challenge-gen", "chrome-scraper", "crypto_solver", "ctfd_manage",
+            "ctfd_setup", "ctfd_solve", "ctftime", "exploit_gen", "flagger",
+            "forensics", "fuzzing", "ghactions-exploitation", "iot-analyzer",
+            "kavach_shield", "kavach_wrapper", "merger",
+            "purple-loop-orchestrator", "recon", "research-agent",
+            "research-rag", "research-swarm", "research-youtube-ocr",
+            "reverse", "reverse_engineering", "stego_solver", "superpowers",
+            "vuln-discovery", "web", "web3-analyzer",
+            "web_exploit (DEPRECATED)", "windows-exploitation",
             "writeup_generator"
         }
         assert expected.issubset(skills.keys())

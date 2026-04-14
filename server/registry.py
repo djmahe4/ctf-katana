@@ -117,21 +117,29 @@ def discover_skills(skills_dir: Optional[Path] = None) -> Dict[str, Skill]:
         try:
             # Load module using unique name based on path
             module_name = f"skills.{skill_id}.run"
-            spec = importlib.util.spec_from_file_location(module_name, run_py)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                # Keep track of the module in sys.modules to avoid double-loading or import issues
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)
+            # Re-use already-loaded module to avoid replacing cached imports
+            # (which would break @patch decorators that patched the original module).
+            if module_name in sys.modules:
+                module = sys.modules[module_name]
                 run_fn = getattr(module, "run", None)
-                
-                if run_fn:
-                    skills[meta.name] = Skill(
-                        meta=meta,
-                        prompt=prompt_content,
-                        run=run_fn,
-                        directory=child
-                    )
+            else:
+                spec = importlib.util.spec_from_file_location(module_name, run_py)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    # Register before exec to prevent circular-import issues.
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                    run_fn = getattr(module, "run", None)
+                else:
+                    continue
+
+            if run_fn:
+                skills[meta.name] = Skill(
+                    meta=meta,
+                    prompt=prompt_content,
+                    run=run_fn,
+                    directory=child
+                )
         except Exception as e:
             logger.error(f"Failed to load skill at {child}: {e}")
             continue
