@@ -319,7 +319,8 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
     #   -mc all    match all HTTP status codes
     #   -fc 404    then filter out 404s
     #   -s         silent mode — suppress progress/banner, print results only
-    #              (ffuf docs: "-s  Do not print additional information (default: false)")
+    #   -o file    save results to file
+    #   -of json   output format: newline-delimited JSON records
     # Wordlist is required; skip gracefully if none found.
     ffuf_wordlists = [
         "/usr/share/seclists/Discovery/Web-Content/common.txt",
@@ -327,7 +328,7 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
         "/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt",
     ]
     ffuf_wordlist = next((w for w in ffuf_wordlists if Path(w).exists()), None)
-    ffuf_out = ws / "ffuf.txt"
+    ffuf_out = ws / "ffuf.json"
     if ffuf_wordlist and alive_list.strip():
         first_alive = alive_list.splitlines()[0].strip()
         rc, stdout, _ = _run(
@@ -338,12 +339,14 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
                 "-mc", "all",
                 "-fc", "404",
                 "-s",
+                "-o", str(ffuf_out),
+                "-of", "json",
             ],
             timeout=300,
         )
-        if rc == 0 and stdout.strip():
-            _append(ffuf_out, stdout)
-            log.append(f"ffuf: {len(stdout.splitlines())} paths found")
+        if rc == 0:
+            found = ffuf_out.read_text(encoding="utf-8").strip() if ffuf_out.exists() else stdout.strip()
+            log.append(f"ffuf: results saved to {ffuf_out}" if found else "ffuf: no results")
         else:
             log.append("ffuf: no results")
     else:
@@ -416,6 +419,7 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
             "ports": str(ports_file),
             "alive": str(alive_file),
             "urls": str(urls_file),
+            "ffuf": str(ws / "ffuf.json"),
             "nuclei": str(nuclei_file),
         },
         "summary": "; ".join(log),
