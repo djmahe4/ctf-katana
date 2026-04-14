@@ -312,7 +312,14 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
             log.append(f"{url_tool}: not installed")
 
     # Stage 5d: ffuf – directory and content fuzzing
-    # Canonical (KB Block 4): ffuf -w wordlist -u TARGET/FUZZ -mc all -fc 404 -silent
+    # Canonical (KB Block 4): ffuf -w wordlist -u TARGET/FUZZ -mc all -fc 404 -s
+    # Flags (confirmed from ffuf docs):
+    #   -w  wordlist file path
+    #   -u  target URL with FUZZ keyword
+    #   -mc all    match all HTTP status codes
+    #   -fc 404    then filter out 404s
+    #   -s         silent mode — suppress progress/banner, print results only
+    #              (ffuf docs: "-s  Do not print additional information (default: false)")
     # Wordlist is required; skip gracefully if none found.
     ffuf_wordlists = [
         "/usr/share/seclists/Discovery/Web-Content/common.txt",
@@ -330,10 +337,7 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
                 "-u", f"{first_alive}/FUZZ",
                 "-mc", "all",
                 "-fc", "404",
-                # NOTE: ffuf has no -silent flag (Context7/ffuf/ffuf confirmed).
-                # Use -o/-of to capture output without -silent.
-                "-o", str(ffuf_out),
-                "-of", "json",
+                "-s",
             ],
             timeout=300,
         )
