@@ -1,28 +1,113 @@
 name: "reverse"
-description: "Logic Architect: Bi-directional Logic RE & Challenge Synthesis. Uses 'Creator Thinking' to reverse logic and 'Attacker Thinking' to create challenges."
-version: "2.0.0"
+description: >
+  Reverse Skill Hub: Central intelligence hub for the CTF-Katana ecosystem.
+  Orchestrates the full TRI-MODE execution engine — SOLVE (Mode A), BUILD (Mode B),
+  and THINK (Mode C) — via PipelineConductor (purple_loop_orchestrator v1.0.0).
+version: "3.0.0"
 author: "Antigravity-C13"
 
-# Logic Architect Handlers
+# ── Tri-Mode Execution Engine ─────────────────────────────────────────────────
+modes:
+  - name: "SOLVE"
+    action: "solve"
+    alias: "analyze"
+    trigger_keywords:
+      - "reverse"
+      - "pwn"
+      - "exploit"
+      - "solver"
+      - "crack"
+      - "analyze binary"
+      - "decompile"
+      - "find flag"
+      - "break this"
+    description: >
+      13-step offensive pipeline:
+        flagger → analysis → reverse_engineering → binary_exploit →
+        research_ctftime → research_rag → research_agent → purple_loop →
+        exploit_gen → script_writer → exploitation → flagger.verify →
+        writeup_generator
+    output_contract:
+      status: bool
+      summary: str
+      result:
+        flag: "CTF{...}"
+        solver:
+          type: "pwntools|python|bash|web3"
+          path: "outputs/reverse/solver.py"
+          validated: bool
+        findings: list
+        artifacts: list
+        writeup: "outputs/reverse/writeup.md"
+
+  - name: "BUILD"
+    action: "create"
+    trigger_keywords:
+      - "build challenge"
+      - "create ctf"
+      - "vuln→ctf"
+      - "generate challenge"
+      - "from bug report"
+      - "from cve"
+      - "inspire from ctftime"
+      - "based on real ctf"
+      - "clone challenge"
+      - "android challenge"
+      - "iot challenge"
+      - "firmware ctf"
+    description: >
+      Multi-phase challenge creation pipeline:
+        Phase 0 (Intelligence Gathering):
+          CVE-ID       → research_vuln_discovery
+          CTFtime ref  → research_ctftime + research_chrome_scraper
+          KB keyword   → research_rag
+        Phase 1+:
+          PipelineConductor (purple_loop_orchestrator, non-interactive)
+        Docker image tag: ctf-challenge-base:latest
+
+  - name: "THINK"
+    action: "think"
+    description: >
+      REDesigner LLM brainstorming engine.
+      Uses groq/llama-3.3-70b-versatile for logic strategy and
+      challenge design reasoning.
+
+# ── Handlers ──────────────────────────────────────────────────────────────────
 handlers:
+  - name: "SolveHandler"
+    path: "handlers/solve_handler.py"
+    modes: ["solve", "offensive", "synergy"]
   - name: "LogicHandler"
     path: "handlers/logic_handler.py"
     modes: ["offensive", "logic_re", "synergy"]
   - name: "SynthesisHandler"
     path: "handlers/synthesis_handler.py"
-    modes: ["synthesis", "challenge_gen", "synergy"]
+    modes: ["synthesis", "challenge_gen", "synergy", "create"]
 
-# LLM-Driven Engines
+# ── LLM-Driven Engines ────────────────────────────────────────────────────────
 engines:
   - name: "REDesigner"
     path: "engines/re_designer.py"
     model: "groq/llama-3.3-70b-versatile"
 
-# Actions Supported
+# ── Actions ───────────────────────────────────────────────────────────────────
 actions:
-  - "analyze"
-  - "create"
-  - "think"
+  - "solve"       # Mode A: 13-step SOLVE pipeline
+  - "analyze"     # Mode A alias (back-compat)
+  - "create"      # Mode B: BUILD pipeline
+  - "think"       # Mode C: REDesigner brainstorm
+
+# ── Critical Implementation Rules ────────────────────────────────────────────
+patches:
+  script_writer:
+    path_enforcement: "All outputs MUST go to outputs/reverse/"
+    solver_path: "outputs/reverse/solver.py"
+    writeup_path: "outputs/reverse/writeup.md"
+  pipeline_memory:
+    mandate: "load_state/save_state required for all pipelines"
+    state_path: "data/sessions/reverse_{target_slug}/state.json"
+  docker:
+    image_tag: "ctf-challenge-base:latest"
 
 dependencies:
   - "pydantic"
