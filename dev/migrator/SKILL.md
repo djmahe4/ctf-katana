@@ -9,8 +9,8 @@ The `raum-dev-migrator` skill ensures that the transition from Python to Rust is
 
 ## Context Anchors
 
-- **Canonical Guide**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
-- **Current Roadmap**: [PROGRESS.md](docs/PROGRESS.md)
+- **Canonical Guide**: [MIGRATION_GUIDE.md](../../docs/MIGRATION_GUIDE.md)
+- **Current Roadmap**: [PROGRESS.md](../../docs/PROGRESS.md)
 
 ## Migration Workflow
 
