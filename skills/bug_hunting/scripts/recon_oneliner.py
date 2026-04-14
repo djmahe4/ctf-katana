@@ -105,7 +105,6 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
         log.append(f"subfinder: skipped ({stderr[:80]})")
 
     # Stage 1b: Active subdomain brute-forcing (shuffledns)
-    # shuffledns requires a wordlist; skip gracefully if not found.
     # Canonical: shuffledns -d target.com -r resolvers.txt -w wordlist.txt
     wordlist_candidates = [
         "/usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt",
@@ -133,6 +132,54 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
             log.append("shuffledns: skipped (non-zero exit)")
     else:
         log.append("shuffledns: skipped (resolvers.txt or wordlist not found)")
+
+    # Stage 1c: assetfinder – domain/subdomain discovery
+    # Canonical: assetfinder --subs-only domain.com
+    rc, stdout, _ = _run(
+        ["assetfinder", "--subs-only", target], timeout=120
+    )
+    if rc == 0 and stdout.strip():
+        _append(subs_file, stdout)
+        log.append(f"assetfinder: {len(stdout.splitlines())} subs found")
+    else:
+        log.append("assetfinder: skipped")
+
+    # Stage 1d: findomain – fast certificate-transparency subdomain discovery
+    # Canonical: findomain -t domain.com -q  (-q = quiet, only subdomains)
+    rc, stdout, _ = _run(
+        ["findomain", "-t", target, "-q"], timeout=120
+    )
+    if rc == 0 and stdout.strip():
+        _append(subs_file, stdout)
+        log.append(f"findomain: {len(stdout.splitlines())} subs found")
+    else:
+        log.append("findomain: skipped")
+
+    # Stage 1e: amass – in-depth attack surface mapping (passive mode)
+    # Canonical: amass enum -passive -d domain.com
+    # Using -passive avoids aggressive brute-forcing; use -brute for active.
+    rc, stdout, _ = _run(
+        ["amass", "enum", "-passive", "-d", target], timeout=300
+    )
+    if rc == 0 and stdout.strip():
+        _append(subs_file, stdout)
+        log.append(f"amass: {len(stdout.splitlines())} subs found")
+    else:
+        log.append("amass: skipped")
+
+    # Stage 1f: Shodan cloud reconnaissance (Python library)
+    # Context7/achillean/shodan-python confirmed:
+    #   api = Shodan(API_KEY); results = api.search(query)
+    #   results['matches'][i]['ip_str']  ← confirmed field name
+    # API key read from SHODAN_API_KEY env var to avoid hardcoding.
+    _shodan_recon(target, subs_file, log)
+
+    # Stage 1g: Censys cloud reconnaissance (Python library)
+    # Context7/censys/censys-python confirmed:
+    #   h = CensysHosts(); query = h.search(q, per_page=100)
+    #   for page in query: for host in page: host['ip']
+    # Credentials read from CENSYS_API_ID / CENSYS_API_SECRET env vars.
+    _censys_recon(target, subs_file, log)
 
     # Stage 2: DNS resolution (dnsx)
     # Canonical: dnsx -l subs.txt -r resolvers.txt
@@ -167,6 +214,30 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
         log.append(f"naabu: {len(stdout.splitlines())} ports found")
     else:
         log.append("naabu: skipped")
+
+    # Stage 3b: nmap host/service discovery
+    # Canonical (KB Block 6): nmap -v -sn @ | grep "Nmap scan report for"
+    # We use -sn (ping scan, no port scan) to discover live hosts quickly;
+    # -oG - outputs grepable format for easy parsing.
+    # For deep scans, pass the target as a CIDR or hostname list.
+    nmap_targets = resolved_list.splitlines() if resolved_list.strip() else [target]
+    nmap_ips: List[str] = []
+    for nmap_host in nmap_targets[:20]:  # cap to avoid run-away scans
+        rc, stdout, _ = _run(
+            ["nmap", "-v", "-sn", "-oG", "-", nmap_host.strip()],
+            timeout=60,
+        )
+        if rc == 0:
+            for line in stdout.splitlines():
+                if "Host:" in line and "Status: Up" in line:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        nmap_ips.append(parts[1])
+    if nmap_ips:
+        _append(ports_file, "\n".join(nmap_ips))
+        log.append(f"nmap: {len(nmap_ips)} live hosts discovered")
+    else:
+        log.append("nmap: skipped or no live hosts found")
 
     # Stage 4: HTTP alive check (httpx)
     ports_list = ports_file.read_text(encoding="utf-8") if ports_file.exists() else ""
@@ -214,19 +285,95 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
     else:
         log.append("katana: skipped")
 
-    # Stage 5b: Historical URL supplement via gau / waybackurls
+    # Stage 5b: hakrawler – fast endpoint/link discovery
+    # Canonical: echo https://target | hakrawler -plain -insecure
+    # hakrawler reads one URL per line from stdin.
+    for alive_host in (alive_list.splitlines() or [f"https://{target}"])[:10]:
+        rc, stdout, _ = _run(
+            ["hakrawler", "-plain", "-insecure"],
+            timeout=60,
+            stdin=alive_host.strip(),
+        )
+        if rc == 0 and stdout.strip():
+            _append(urls_file, stdout)
+    log.append("hakrawler: supplemental crawl complete")
+
+    # Stage 5c: Historical URL supplement via gau / waybackurls
     # gau aggregates URLs from AlienVault OTX, Wayback Machine, and Common Crawl.
     # waybackurls is a simpler Wayback-only alternative used as fallback.
     # Canonical: cat alive.txt | gau >> urls.txt
-    # We try gau first; fall back to waybackurls if gau is unavailable.
     for url_tool in ("gau", "waybackurls"):
         rc, stdout, _ = _run([url_tool, target], timeout=120)
         if rc == 0 and stdout.strip():
             _append(urls_file, stdout)
             log.append(f"{url_tool}: {len(stdout.splitlines())} historical URLs added")
             break
-        if rc == 127:  # tool not installed
+        if rc == 127:
             log.append(f"{url_tool}: not installed")
+
+    # Stage 5d: ffuf – directory and content fuzzing
+    # Canonical (KB Block 4): ffuf -w wordlist -u TARGET/FUZZ -mc all -fc 404 -silent
+    # Wordlist is required; skip gracefully if none found.
+    ffuf_wordlists = [
+        "/usr/share/seclists/Discovery/Web-Content/common.txt",
+        "/usr/share/wordlists/dirb/common.txt",
+        "/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt",
+    ]
+    ffuf_wordlist = next((w for w in ffuf_wordlists if Path(w).exists()), None)
+    ffuf_out = ws / "ffuf.txt"
+    if ffuf_wordlist and alive_list.strip():
+        first_alive = alive_list.splitlines()[0].strip()
+        rc, stdout, _ = _run(
+            [
+                "ffuf",
+                "-w", ffuf_wordlist,
+                "-u", f"{first_alive}/FUZZ",
+                "-mc", "all",
+                "-fc", "404",
+                "-silent",
+            ],
+            timeout=300,
+        )
+        if rc == 0 and stdout.strip():
+            _append(ffuf_out, stdout)
+            log.append(f"ffuf: {len(stdout.splitlines())} paths found")
+        else:
+            log.append("ffuf: no results")
+    else:
+        log.append("ffuf: skipped (no wordlist or alive hosts)")
+
+    # Stage 5e: dirsearch – recursive directory/file discovery
+    # Canonical (KB Block 4):
+    #   dirsearch -l ips_alive --full-url --recursive --exclude-sizes=0B
+    #             --random-agent -e 7z,archive,ashx,asp,aspx,back,backup,
+    #                               db,sql,zip,conf,config,bak,swp,old
+    #             -o output.txt
+    dirsearch_out = ws / "dirsearch.txt"
+    if alive_list.strip():
+        alive_tmp = ws / "_alive_tmp.txt"
+        alive_tmp.write_text(alive_list, encoding="utf-8")
+        rc, _, _ = _run(
+            [
+                "dirsearch",
+                "-l", str(alive_tmp),
+                "--full-url",
+                "--recursive",
+                "--exclude-sizes=0B",
+                "--random-agent",
+                "-e", "7z,archive,ashx,asp,aspx,back,backup,db,sql,zip,conf,config,bak,swp,old",
+                "-o", str(dirsearch_out),
+                "--format", "plain",
+                "-q",
+            ],
+            timeout=600,
+        )
+        alive_tmp.unlink(missing_ok=True)
+        if rc == 0:
+            log.append("dirsearch: scan complete")
+        else:
+            log.append("dirsearch: skipped or no results")
+    else:
+        log.append("dirsearch: skipped (no alive hosts)")
 
     # Stage 6: Vulnerability scan (nuclei)
     # Flags (Context7/nuclei confirmed):
