@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 try:
-    from drissionpage import SessionPage  # type: ignore[import]
+    # Canonical import casing per Context7/DrissionPage docs: capital D
+    from DrissionPage import SessionPage  # type: ignore[import]
     _HAS_DRISSION = True
 except ImportError:
     _HAS_DRISSION = False
@@ -136,8 +137,14 @@ class RAGProcessor:
         self._faiss_available = _HAS_FAISS and _HAS_ST
 
         if self._faiss_available:
-            self._model = SentenceTransformer("all-MiniLM-L6-v2")
-            self._dim = self._model.get_sentence_embedding_dimension()
+            self._model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            # get_sentence_embedding_dimension() is the legacy name; the current
+            # API is get_embedding_dimension().  We try the modern name first and
+            # fall back for older installs (Context7 / sentence-transformers docs).
+            if hasattr(self._model, "get_embedding_dimension"):
+                self._dim = self._model.get_embedding_dimension()
+            else:
+                self._dim = self._model.get_sentence_embedding_dimension()
             self._index = faiss.IndexFlatL2(self._dim)
         else:
             logger.warning(
