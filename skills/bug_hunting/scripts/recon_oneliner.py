@@ -328,27 +328,29 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
         "/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt",
     ]
     ffuf_wordlist = next((w for w in ffuf_wordlists if Path(w).exists()), None)
-    ffuf_out = ws / "ffuf.json"
     if ffuf_wordlist and alive_list.strip():
-        first_alive = alive_list.splitlines()[0].strip()
-        rc, stdout, _ = _run(
-            [
-                "ffuf",
-                "-w", ffuf_wordlist,
-                "-u", f"{first_alive}/FUZZ",
-                "-mc", "all",
-                "-fc", "404",
-                "-s",
-                "-o", str(ffuf_out),
-                "-of", "json",
-            ],
-            timeout=300,
-        )
-        if rc == 0:
-            found = ffuf_out.read_text(encoding="utf-8").strip() if ffuf_out.exists() else stdout.strip()
-            log.append(f"ffuf: results saved to {ffuf_out}" if found else "ffuf: no results")
-        else:
-            log.append("ffuf: no results")
+        for i, host in enumerate(alive_list.splitlines()):
+            host = host.strip()
+            if not host:
+                continue
+            ffuf_out = ws / f"ffuf_{i}.json"
+            rc, stdout, _ = _run(
+                [
+                    "ffuf",
+                    "-w", ffuf_wordlist,
+                    "-u", f"{host}/FUZZ",
+                    "-mc", "all",
+                    "-fc", "404",
+                    "-s",
+                    "-o", str(ffuf_out),
+                    "-of", "json",
+                ],
+                timeout=300,
+            )
+            if rc == 0:
+                log.append(f"ffuf ({host}): results saved to {ffuf_out}")
+            else:
+                log.append(f"ffuf ({host}): no results or failed")
     else:
         log.append("ffuf: skipped (no wordlist or alive hosts)")
 

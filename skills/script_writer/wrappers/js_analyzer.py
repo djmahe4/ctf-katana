@@ -85,18 +85,33 @@ class JSAnalyzer:
     def _validate_endpoints(
         self, endpoints: List[str]
     ) -> List[Dict[str, Any]]:
-        """HEAD-request each endpoint and return those that respond."""
+        """HEAD-request each endpoint and return those that respond.
+
+        Uses ThreadPoolExecutor for parallel validation.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
         valid: List[Dict[str, Any]] = []
-        for ep in endpoints:
+
+        def check_ep(ep: str) -> Optional[Dict[str, Any]]:
             full_url = urljoin(self.base_url + "/", ep.lstrip("/"))
             try:
                 resp = self._session.head(
                     full_url, timeout=self.timeout, allow_redirects=True
                 )
                 if resp.status_code in self.valid_statuses:
-                    valid.append({"url": full_url, "status": resp.status_code})
+                    return {"url": full_url, "status": resp.status_code}
             except requests.RequestException as exc:
                 logger.debug("HEAD %s failed: %s", full_url, exc)
+            return None
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(check_ep, endpoints))
+
+        for res in results:
+            if res:
+                valid.append(res)
+
         return valid
 
     @staticmethod

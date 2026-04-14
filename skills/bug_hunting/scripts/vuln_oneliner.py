@@ -226,20 +226,29 @@ def scan_open_redirect(urls: List[str], evil_url: str = "http://evil.com") -> Li
         logger.info("No redirect parameter URLs found.")
         return []
 
-    # Use qsreplace to inject evil_url; fall back to urllib.parse
+    # Use qsreplace to inject evil_url
     test_urls = _qsreplace(candidates, evil_url)
+    if not test_urls:
+        return []
 
-    vulnerable: List[str] = []
-    for test_url in test_urls:
+    # Parallel confirmation via httpx
+    # Flags:
+    #   -l -              read targets from stdin
+    #   -follow-redirects follow redirects to final destination
+    #   -mr <string>      match response forevil_url (confirmation)
+    #   -silent           suppress banner/progress
+    tmp_path = _write_tmp(test_urls)
+    try:
         rc, stdout, _ = _run(
-            ["curl", "-s", "-L", "-I", "-o", "/dev/null", "-w", "%{url_effective}", test_url],
-            timeout=15,
+            ["httpx", "-l", tmp_path, "-follow-redirects", "-mr", evil_url, "-silent"],
+            timeout=120,
         )
-        if rc == 0 and evil_url in stdout:
-            logger.warning("Open redirect confirmed: %s", test_url)
-            vulnerable.append(test_url)
-
-    return vulnerable
+        vulnerable = [l.strip() for l in stdout.splitlines() if l.strip()]
+        for v in vulnerable:
+            logger.warning("Open redirect confirmed: %s", v)
+        return vulnerable
+    finally:
+        os.unlink(tmp_path)
 
 
 # ---------------------------------------------------------------------------

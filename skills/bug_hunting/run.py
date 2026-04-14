@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # Project-root import guard (allows both ``python run.py`` and module import)
@@ -174,13 +175,11 @@ def _run_cmd(
 
 def step_analyze(target: str) -> Dict[str, Any]:
     """Step 1 – Analyse the target and infer basic properties."""
+    parsed = urlparse(target if "://" in target else f"http://{target}")
+    domain = parsed.hostname or target.split(":")[0]
     is_url = target.startswith(("http://", "https://"))
-    has_port = ":" in target.split("/")[-1]
-    domain = (
-        target.split("://", 1)[-1].split("/")[0].split(":")[0]
-        if is_url
-        else target.split(":")[0]
-    )
+    has_port = parsed.port is not None
+
     return {
         "raw_target": target,
         "domain": domain,
@@ -267,46 +266,51 @@ def step_resolve_hosts(subdomains: List[str]) -> List[str]:
 def step_port_scan(hosts: List[str], depth: str = "medium") -> List[str]:
     """Step 4c – Port scan and HTTP/HTTPS identification via naabu + httpx."""
     rate = {"quick": "500", "medium": "1000", "deep": "3000"}.get(depth, "1000")
-
     alive: List[str] = []
-    for host in hosts:
-        # naabu
-        try:
-            rc, stdout, _ = _run_cmd(
-                ["naabu", "-host", host, "-rate", rate, "-silent"],
-                timeout=60,
-            )
-            ports = [line.strip() for line in stdout.splitlines() if line.strip()]
-        except FileNotFoundError:
-            logger.warning("naabu not installed; defaulting to port 80/443.")
-            ports = [f"{host}:80", f"{host}:443"]
 
-        # httpx
-        for port_entry in ports:
-            target_url = (
-                port_entry
-                if port_entry.startswith("http")
-                else f"http://{port_entry}"
-            )
-            try:
-                rc2, stdout2, _ = _run_cmd(
-                    ["httpx", "-silent", "-u", target_url],
-                    timeout=30,
-                )
-                for line in stdout2.splitlines():
-                    line = line.strip()
-                    if line:
-                        alive.append(line)
-            except FileNotFoundError:
-                logger.warning("httpx not installed; treating host as alive.")
-                alive.append(target_url)
-                break
+    # 1. naabu batch scan
+    try:
+        rc, stdout, _ = _run_cmd(
+            ["naabu", "-list", "-", "-rate", rate, "-silent"],
+            timeout=120,
+            stdin_input="\n".join(hosts),
+        )
+        ports = [line.strip() for line in stdout.splitlines() if line.strip()]
+    except FileNotFoundError:
+        logger.warning("naabu not installed; defaulting to port 80/443.")
+        ports = []
+        for h in hosts:
+            ports.extend([f"{h}:80", f"{h}:443"])
 
-    return alive if alive else [f"http://{hosts[0]}"]
+    if not ports:
+        return [f"http://{h}" for h in hosts]
+
+    # 2. httpx batch probe
+    try:
+        rc2, stdout2, _ = _run_cmd(
+            ["httpx", "-silent", "-l", "-"],
+            timeout=60,
+            stdin_input="\n".join(ports),
+        )
+        for line in stdout2.splitlines():
+            line = line.strip()
+            if line:
+                alive.append(line)
+    except FileNotFoundError:
+        logger.warning("httpx not installed; treating targets as alive.")
+        # Fallback: assume everything is http
+        for p in ports:
+            alive.append(p if p.startswith("http") else f"http://{p}")
+
+    return list(dict.fromkeys(alive)) or [f"http://{hosts[0]}"]
 
 
 def step_url_collect(alive_hosts: List[str], depth: str = "medium") -> List[str]:
     """Step 4d – URL corpus collection via katana.
+
+    Features:
+    * Batch processing: all hosts passed via stdin in one crawl session.
+    * JS parsing, known-file crawling, extension filtering enabled.
 
     Flags used (all Context7/katana confirmed):
     * ``-jc``         – parse JS files for additional endpoints
@@ -325,30 +329,30 @@ def step_url_collect(alive_hosts: List[str], depth: str = "medium") -> List[str]
     depth_flag = {"quick": "2", "medium": "3", "deep": "5"}.get(depth, "3")
     urls: List[str] = []
 
-    for host in alive_hosts:
-        try:
-            rc, stdout, _ = _run_cmd(
-                [
-                    "katana",
-                    "-u", host,
-                    "-d", depth_flag,
-                    "-jc",
-                    "-kf", "all",
-                    "-fx",
-                    "-aff",
-                    "-silent",
-                    "-nc",
-                    "-ef", "woff,css,png,svg,jpg,woff2,jpeg,gif",
-                ],
-                timeout=120,
-            )
-            for line in stdout.splitlines():
-                line = line.strip()
-                if line:
-                    urls.append(line)
-        except FileNotFoundError:
-            logger.warning("katana not installed; using alive host as URL seed.")
-            urls.append(host)
+    try:
+        rc, stdout, _ = _run_cmd(
+            [
+                "katana",
+                "-list", "-",
+                "-d", depth_flag,
+                "-jc",
+                "-kf", "all",
+                "-fx",
+                "-aff",
+                "-silent",
+                "-nc",
+                "-ef", "woff,css,png,svg,jpg,woff2,jpeg,gif",
+            ],
+            timeout=300,  # Increased timeout for batch crawl
+            stdin_input="\n".join(alive_hosts),
+        )
+        for line in stdout.splitlines():
+            line = line.strip()
+            if line:
+                urls.append(line)
+    except FileNotFoundError:
+        logger.warning("katana not installed; using alive hosts as URL seeds.")
+        urls.extend(alive_hosts)
 
     return list(dict.fromkeys(urls)) or alive_hosts  # deduplicate, preserve order
 
