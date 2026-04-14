@@ -325,13 +325,21 @@ class TestRunEntryPoint:
         assert result["status"] is True
 
     def test_exception_in_action_handled(self, tmp_path: Path):
-        with patch(
-            "skills.script_writer.run._action_generate_report",
-            side_effect=RuntimeError("unexpected failure"),
-        ):
+        # _ACTIONS captures the handler function by value at import time.
+        # Patching the module-level name after the fact has no effect.
+        # We must patch the dict entry directly.
+        import skills.script_writer.run as sw_run
+        original = sw_run._ACTIONS["generate_report"]
+        sw_run._ACTIONS["generate_report"] = MagicMock(
+            side_effect=RuntimeError("unexpected failure")
+        )
+        try:
             result = run({
                 "action": "generate_report",
                 "workspace": str(tmp_path),
             })
+        finally:
+            sw_run._ACTIONS["generate_report"] = original
+
         assert result["status"] is False
         assert "unexpected failure" in result["summary"]

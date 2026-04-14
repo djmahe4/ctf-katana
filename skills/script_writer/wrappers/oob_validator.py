@@ -67,11 +67,15 @@ class OOBValidator:
             f"?correlationId={correlation_id}"
         )
 
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                async with aiohttp.ClientSession() as session:
+        # Context7/aiohttp: create one session for all retry attempts to enable
+        # connection reuse ("reusing sessions for optimal performance").
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(1, self.max_retries + 1):
+                try:
                     async with session.get(
-                        url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)
+                        url,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=10),
                     ) as resp:
                         if resp.status == 200:
                             data = await resp.json()
@@ -81,14 +85,14 @@ class OOBValidator:
                                     correlation_id,
                                 )
                                 return True
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Polling attempt %d/%d failed: %s",
-                    attempt,
-                    self.max_retries,
-                    exc,
-                )
-            await asyncio.sleep(self.retry_interval)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Polling attempt %d/%d failed: %s",
+                        attempt,
+                        self.max_retries,
+                        exc,
+                    )
+                await asyncio.sleep(self.retry_interval)
 
         logger.info(
             "No OOB interaction detected for correlation ID: %s", correlation_id

@@ -94,7 +94,7 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
 
     log: List[str] = []
 
-    # Stage 1: Subdomain enumeration (subfinder)
+    # Stage 1a: Passive subdomain enumeration (subfinder)
     rc, stdout, stderr = _run(
         ["subfinder", "-d", target, "-all", "-silent"], timeout=180
     )
@@ -104,14 +104,51 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
     else:
         log.append(f"subfinder: skipped ({stderr[:80]})")
 
+    # Stage 1b: Active subdomain brute-forcing (shuffledns)
+    # shuffledns requires a wordlist; skip gracefully if not found.
+    # Canonical: shuffledns -d target.com -r resolvers.txt -w wordlist.txt
+    wordlist_candidates = [
+        "/usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt",
+        "/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-20000.txt",
+        "n0kovo_subdomains_huge.txt",
+    ]
+    resolvers_candidates = ["resolvers.txt", "/tmp/resolvers.txt"]
+    shuffledns_wordlist = next((w for w in wordlist_candidates if Path(w).exists()), None)
+    shuffledns_resolvers = next((r for r in resolvers_candidates if Path(r).exists()), None)
+    if shuffledns_wordlist and shuffledns_resolvers:
+        rc, stdout, _ = _run(
+            [
+                "shuffledns",
+                "-d", target,
+                "-r", shuffledns_resolvers,
+                "-w", shuffledns_wordlist,
+                "-silent",
+            ],
+            timeout=300,
+        )
+        if rc == 0:
+            _append(subs_file, stdout)
+            log.append(f"shuffledns: {len(stdout.splitlines())} subs found")
+        else:
+            log.append("shuffledns: skipped (non-zero exit)")
+    else:
+        log.append("shuffledns: skipped (resolvers.txt or wordlist not found)")
+
     # Stage 2: DNS resolution (dnsx)
+    # Canonical: dnsx -l subs.txt -r resolvers.txt
+    # * No -resp-only: that strips domain names to raw IPs, breaking naabu SNI.
+    # * Input fed via stdin; first token of each output line is the domain name.
     subs_list = subs_file.read_text(encoding="utf-8") if subs_file.exists() else ""
     rc, stdout, _ = _run(
-        ["dnsx", "-silent", "-resp-only"], timeout=120, stdin=subs_list
+        ["dnsx", "-l", "-", "-silent"], timeout=120, stdin=subs_list
     )
     if rc == 0:
-        _append(resolved_file, stdout)
-        log.append(f"dnsx: {len(stdout.splitlines())} resolved")
+        # dnsx outputs "domain [ip]" – keep only the domain (first token)
+        resolved_domains = "\n".join(
+            line.split()[0] for line in stdout.splitlines() if line.strip()
+        )
+        _append(resolved_file, resolved_domains)
+        log.append(f"dnsx: {len(resolved_domains.splitlines())} resolved")
     else:
         _append(resolved_file, subs_list)  # fall back to raw subs
         log.append("dnsx: skipped (falling back to raw subs)")
@@ -145,6 +182,15 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
         log.append("httpx: skipped")
 
     # Stage 5: URL crawl (katana)
+    # Flags (Context7/katana confirmed):
+    #   -jc       – parse JS files for additional endpoints
+    #   -kf all   – crawl robots.txt, sitemap.xml and other known files
+    #   -fx       – extract form/input/select elements
+    #   -aff      – automatic form filling (experimental)
+    #   -nc       – no-colour ANSI-safe output
+    #   -ef       – extension filter (skip binary assets)
+    # Note: -xhr (XHR extraction) is HEADLESS-only per Context7 docs;
+    #       it is intentionally omitted here to avoid no-op errors.
     alive_list = (
         alive_file.read_text(encoding="utf-8") if alive_file.exists() else ""
     )
@@ -152,7 +198,11 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
         [
             "katana",
             "-list", "-",
-            "-silent", "-nc", "-jc",
+            "-silent", "-nc",
+            "-jc",
+            "-kf", "all",
+            "-fx",
+            "-aff",
             "-ef", "woff,css,png,svg,jpg,woff2,jpeg,gif",
         ],
         timeout=300,
@@ -164,12 +214,33 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
     else:
         log.append("katana: skipped")
 
+    # Stage 5b: Historical URL supplement via gau / waybackurls
+    # gau aggregates URLs from AlienVault OTX, Wayback Machine, and Common Crawl.
+    # waybackurls is a simpler Wayback-only alternative used as fallback.
+    # Canonical: cat alive.txt | gau >> urls.txt
+    # We try gau first; fall back to waybackurls if gau is unavailable.
+    for url_tool in ("gau", "waybackurls"):
+        rc, stdout, _ = _run([url_tool, target], timeout=120)
+        if rc == 0 and stdout.strip():
+            _append(urls_file, stdout)
+            log.append(f"{url_tool}: {len(stdout.splitlines())} historical URLs added")
+            break
+        if rc == 127:  # tool not installed
+            log.append(f"{url_tool}: not installed")
+
     # Stage 6: Vulnerability scan (nuclei)
+    # Flags (Context7/nuclei confirmed):
+    #   -l -          read targets from stdin
+    #   -es info,unknown  exclude informational/unknown findings
+    #   -ept ssl      exclude ssl protocol templates
+    #   -silent       suppress progress; emit findings only
+    # NOTE: -ss / --scan-strategy does NOT exist in the official nuclei CLI
+    #       (verified via Context7/projectdiscovery/nuclei docs).  Removed.
     urls_list = urls_file.read_text(encoding="utf-8") if urls_file.exists() else ""
     rc, stdout, _ = _run(
         [
             "nuclei",
-            "-list", "-",
+            "-l", "-",
             "-es", "info,unknown",
             "-ept", "ssl",
             "-silent",

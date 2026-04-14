@@ -233,13 +233,31 @@ def step_subdomain_enum(domain: str, depth: str = "medium") -> List[str]:
 
 
 def step_resolve_hosts(subdomains: List[str]) -> List[str]:
-    """Step 4b – Resolve subdomains to live IPs via dnsx."""
+    """Step 4b – Resolve subdomains to live hostnames via dnsx.
+
+    Canonical usage (Context7/projectdiscovery):
+        dnsx -l subs.txt -r resolvers.txt
+
+    Notes
+    -----
+    * Subdomains are passed via stdin (``-l -``).
+    * ``-resp-only`` is intentionally absent: it strips domain names and outputs
+      only raw IPs, which breaks downstream httpx/naabu SNI lookups.
+      The plain ``dnsx -silent`` output format is ``domain [ip]``; we keep the
+      domain portion for host-based TLS matching.
+    """
     try:
         rc, stdout, _ = _run_cmd(
-            ["dnsx", "-silent", "-resp-only"],
+            ["dnsx", "-l", "-", "-silent"],
             timeout=60,
+            stdin_input="\n".join(subdomains),
         )
-        resolved = [line.strip() for line in stdout.splitlines() if line.strip()]
+        # dnsx outputs "domain [ip]" lines – keep only the domain portion
+        resolved = []
+        for line in stdout.splitlines():
+            line = line.strip()
+            if line:
+                resolved.append(line.split()[0])  # first token = domain
         return resolved if resolved else subdomains
     except FileNotFoundError:
         logger.warning("dnsx not installed; using raw subdomain list.")
@@ -288,7 +306,22 @@ def step_port_scan(hosts: List[str], depth: str = "medium") -> List[str]:
 
 
 def step_url_collect(alive_hosts: List[str], depth: str = "medium") -> List[str]:
-    """Step 4d – URL corpus collection via katana."""
+    """Step 4d – URL corpus collection via katana.
+
+    Flags used (all Context7/katana confirmed):
+    * ``-jc``         – parse JS files for additional endpoints
+    * ``-kf all``     – crawl robots.txt + sitemap.xml + other known files
+    * ``-fx``         – extract form/input/select elements (JSONL)
+    * ``-aff``        – automatic form filling (experimental)
+    * ``-nc``         – no colour (ANSI-safe output)
+    * ``-ef``         – extension filter (skip binary assets)
+    * ``-d``          – max crawl depth
+
+    Note on ``-xhr``:  XHR extraction (``-xhr``) is placed under katana's HEADLESS
+    section (Context7 confirmed); it requires ``-hl`` headless mode to intercept
+    XHR at the JS runtime level.  It is therefore NOT included in the standard
+    non-headless call to avoid no-op or runtime errors.
+    """
     depth_flag = {"quick": "2", "medium": "3", "deep": "5"}.get(depth, "3")
     urls: List[str] = []
 
@@ -299,6 +332,10 @@ def step_url_collect(alive_hosts: List[str], depth: str = "medium") -> List[str]
                     "katana",
                     "-u", host,
                     "-d", depth_flag,
+                    "-jc",
+                    "-kf", "all",
+                    "-fx",
+                    "-aff",
                     "-silent",
                     "-nc",
                     "-ef", "woff,css,png,svg,jpg,woff2,jpeg,gif",
@@ -324,11 +361,20 @@ def step_vuln_scan(
     findings: List[Finding] = []
 
     # --- nuclei scan ---
+    # Flags (Context7/nuclei confirmed):
+    #   -l -          read targets from stdin
+    #   -es info,unknown  exclude informational/unknown severity findings
+    #   -ept ssl      exclude SSL protocol templates (handled separately)
+    #   -silent       suppress progress output; emit JSONL findings only
+    #
+    # NOTE: The ``-ss template-spray`` flag does NOT exist in the official
+    # nuclei CLI (verified via Context7/projectdiscovery/nuclei docs).  It has
+    # been intentionally removed.
     try:
         rc, stdout, _ = _run_cmd(
             [
                 "nuclei",
-                "-list", "-",
+                "-l", "-",
                 "-es", "info,unknown",
                 "-ept", "ssl",
                 "-silent",
