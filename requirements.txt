@@ -15,12 +15,24 @@ watchdog>=3.0.0           # File system monitoring (optional)
 # Phase 3: Research & RAG
 chromadb>=0.4.0          # Vector database for RAG
 # lancedb>=0.5.0           # Alternative vector DB
-# yt-dlp>=2023.0.0         # YouTube transcript download
+
+# Phase 3: Web scraping / research
+playwright>=1.0.0         # Browser automation (research_chrome_scraper)
+playwright-stealth>=1.0.0 # Anti-detection for Playwright
 
 # Phase 4: Multi-Domain Support
 # web3>=6.0.0              # Ethereum smart contract interaction
 # pwntools>=4.11.0         # Binary exploitation tools
 # frida>=16.0.0            # Android dynamic instrumentation
+
+# Phase 4: Media & OCR (research_youtube_ocr)
+opencv-python-headless>=4.0.0   # Video frame extraction
+Pillow>=9.0.0                   # Image processing
+pytesseract>=0.3.0              # OCR wrapper (requires system tesseract)
+DrissionPage>=4.0.0             # Chromium automation
+
+# Phase 4: Network forensics
+scapy>=2.5.0             # Packet capture analysis (forensics skill)
 
 # Development & Testing
 pytest>=7.0
