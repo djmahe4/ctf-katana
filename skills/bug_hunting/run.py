@@ -143,6 +143,7 @@ def _run_cmd(
     *,
     timeout: int = 30,
     capture: bool = True,
+    stdin_input: Optional[str] = None,
 ) -> Tuple[int, str, str]:
     """Run *cmd* and return (returncode, stdout, stderr).
 
@@ -155,6 +156,7 @@ def _run_cmd(
             capture_output=capture,
             text=True,
             timeout=timeout,
+            input=stdin_input,
         )
         return proc.returncode, proc.stdout or "", proc.stderr or ""
     except FileNotFoundError:
@@ -322,7 +324,6 @@ def step_vuln_scan(
     findings: List[Finding] = []
 
     # --- nuclei scan ---
-    hosts_input = "\n".join(alive_hosts)
     try:
         rc, stdout, _ = _run_cmd(
             [
@@ -333,6 +334,7 @@ def step_vuln_scan(
                 "-silent",
             ],
             timeout=180,
+            stdin_input="\n".join(alive_hosts),
         )
         # Parse nuclei JSONL output
         for line in stdout.splitlines():

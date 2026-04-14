@@ -97,8 +97,7 @@ class TestStepSubdomainEnum:
     def test_returns_subfinder_output(self, mock_run):
         mock_run.return_value = (0, "api.example.com\ndev.example.com\n", "")
         subs = step_subdomain_enum("example.com")
-        assert "api.example.com" in subs
-        assert "dev.example.com" in subs
+        assert set(subs) == {"api.example.com", "dev.example.com"}
 
     @patch("skills.bug_hunting.run._run_cmd")
     def test_falls_back_to_domain_when_empty(self, mock_run):

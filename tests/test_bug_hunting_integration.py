@@ -174,14 +174,14 @@ class TestSubdomainEnumAction:
         mock_run.return_value = (0, "mail.example.com\nwww.example.com\n", "")
         result = run({"target": "example.com", "action": "subdomain_enum"})
         assert result["status"] is True
-        assert "mail.example.com" in result["result"]["subdomains"]
+        assert set(result["result"]["subdomains"]) == {"mail.example.com", "www.example.com"}
 
     @patch("skills.bug_hunting.run._run_cmd")
     def test_action_falls_back_to_domain(self, mock_run):
         mock_run.side_effect = FileNotFoundError("subfinder")
         result = run({"target": "example.com", "action": "subdomain_enum"})
         assert result["status"] is True
-        assert "example.com" in result["result"]["subdomains"]
+        assert result["result"]["subdomains"] == ["example.com"]
 
 
 class TestPortScanAction:
@@ -303,8 +303,7 @@ class TestBugHuntingSkillIntegration:
         result = skill.run("example.com")
         log = " ".join(result["result"]["pipeline_log"])
         for step in ("analyze", "kb", "plan", "execute", "interpret", "report"):
-            # Each step prefix should appear at least once in the log
-            assert step in log or step.replace("execute", "execute") in log
+            assert step in log
 
     @patch("skills.bug_hunting.run._run_cmd")
     def test_exception_in_pipeline_handled_by_run_entry(self, mock_run):
