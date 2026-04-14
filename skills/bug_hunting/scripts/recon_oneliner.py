@@ -330,7 +330,10 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
                 "-u", f"{first_alive}/FUZZ",
                 "-mc", "all",
                 "-fc", "404",
-                "-silent",
+                # NOTE: ffuf has no -silent flag (Context7/ffuf/ffuf confirmed).
+                # Use -o/-of to capture output without -silent.
+                "-o", str(ffuf_out),
+                "-of", "json",
             ],
             timeout=300,
         )
@@ -413,6 +416,83 @@ def run_master_recon(target: str, workspace: str = ".") -> dict:
         },
         "summary": "; ".join(log),
     }
+
+
+def _shodan_recon(target: str, subs_file: "Path", log: List[str]) -> None:
+    """Discover IPs/subdomains via the Shodan Python library.
+
+    Context7/achillean/shodan-python confirmed API:
+      api = Shodan(API_KEY)
+      results = api.search(query)          → dict with 'matches' list
+      results['matches'][i]['ip_str']      → confirmed field name
+      results['matches'][i]['hostnames']   → list of hostnames (may be empty)
+
+    API key read from ``SHODAN_API_KEY`` env var.
+    """
+    import os
+    api_key = os.environ.get("SHODAN_API_KEY", "")
+    if not api_key:
+        log.append("shodan: skipped (SHODAN_API_KEY not set)")
+        return
+    try:
+        import shodan  # type: ignore[import]
+        api = shodan.Shodan(api_key)
+        query = f'Ssl.cert.subject.CN:"{target}"'
+        results = api.search(query)
+        found: List[str] = []
+        for match in results.get("matches", []):
+            ip = match.get("ip_str", "")
+            if ip:
+                found.append(ip)
+            for hostname in match.get("hostnames", []):
+                if hostname:
+                    found.append(hostname)
+        if found:
+            from pathlib import Path as _Path  # noqa: PLC0415
+            _append(_Path(str(subs_file)), "\n".join(found))
+            log.append(f"shodan: {len(found)} IPs/hostnames found")
+        else:
+            log.append("shodan: no results")
+    except ImportError:
+        log.append("shodan: skipped (pip install shodan)")
+    except Exception as exc:  # noqa: BLE001
+        log.append(f"shodan: error ({exc})")
+
+
+def _censys_recon(target: str, subs_file: "Path", log: List[str]) -> None:
+    """Discover hosts via the Censys Python library.
+
+    Context7/censys/censys-python confirmed API:
+      h = CensysHosts()                            → reads CENSYS_API_ID / CENSYS_API_SECRET
+      query = h.search(q, per_page=100, pages=2)   → paginated iterator
+      for page in query: for host in page: host['ip']
+
+    Credentials read from ``CENSYS_API_ID`` and ``CENSYS_API_SECRET`` env vars.
+    """
+    import os
+    if not os.environ.get("CENSYS_API_ID") or not os.environ.get("CENSYS_API_SECRET"):
+        log.append("censys: skipped (CENSYS_API_ID / CENSYS_API_SECRET not set)")
+        return
+    try:
+        from censys.search import CensysHosts  # type: ignore[import]
+        from pathlib import Path as _Path  # noqa: PLC0415
+        h = CensysHosts()
+        found: List[str] = []
+        query = h.search(f'"{target}"', per_page=100, pages=2)
+        for page in query:
+            for host in page:
+                ip = host.get("ip", "")
+                if ip:
+                    found.append(ip)
+        if found:
+            _append(_Path(str(subs_file)), "\n".join(found))
+            log.append(f"censys: {len(found)} IPs found")
+        else:
+            log.append("censys: no results")
+    except ImportError:
+        log.append("censys: skipped (pip install censys)")
+    except Exception as exc:  # noqa: BLE001
+        log.append(f"censys: error ({exc})")
 
 
 def main() -> None:

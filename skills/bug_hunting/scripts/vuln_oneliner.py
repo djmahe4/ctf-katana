@@ -2,27 +2,44 @@
 """LFI, Open Redirect, SSRF, SQLi, and XSS hunting helpers for the bug_hunting skill.
 
 Provides Python wrappers for the canonical one-liners from KB Expansion
-Blocks 2, 3, and 5, with async OOB polling for SSRF confirmation.
+Blocks 2, 3, 4, 5, and 6, with async OOB polling for SSRF confirmation.
 
-Tools integrated (all flags validated via Context7):
-* **httpx** – LFI probing (`-l`, `-threads`, `-mc`, `-mr`, `-follow-redirects`)
-* **curl**  – open redirect confirmation (`-L -I`)
-* **sqlmap** – SQL injection (`-m`, `--batch`, `--random-agent`, `--level`, `--risk`, `--tamper`)
-* **Gxss**  – reflected parameter filtering (`-c`, `-p Xss`)
-* **dalfox** – XSS scanning (`pipe` mode)
-* **uro**   – URL deduplication/normalisation
-* **gf**    – grep-wrapper pattern matching (lfi, xss, sqli, redirect, ssrf)
+Tools integrated (flags validated via Context7 where available):
+* **httpx**    – LFI probing (`-l`, `-threads`, `-mc`, `-mr`, `-follow-redirects`)
+* **curl**     – open redirect confirmation (`-L -I`)
+* **sqlmap**   – SQL injection (`-m`, `--batch`, `--random-agent`, `--level`, `--risk`, `--tamper`)
+* **ghauri**   – advanced SQLi (`-u URL --batch --dbs`)
+* **Gxss**     – reflected parameter filtering (`-c`, `-p Xss`)
+* **dalfox**   – XSS scanning (`pipe --silence --no-color`; Context7/hahwul/dalfox confirmed)
+* **xsstrike** – advanced XSS (`-u URL --crawl --fuzzer`; Context7/s0md3v/xsstrike confirmed)
+* **tplmap**   – SSTI detection (`-u URL`; Context7/epinna/tplmap confirmed)
+* **commix**   – command injection (`--url URL --batch`)
+* **xray**     – multi-vector scanning (`ws --basic-crawler --plugins`)
+* **x8**       – hidden parameter discovery (`-u URL -w wordlist -X GET`)
+* **xss0r**    – reflected XSS finder (`-u URL`)
+* **confused** – dependency confusion (`-l npm package.json`)
+* **uro**      – URL deduplication/normalisation
+* **gf**       – grep-wrapper pattern matching (lfi, xss, sqli, redirect, ssrf)
 * **qsreplace** – query-string parameter value substitution
+* **anew**     – implemented as Python ``_append()`` deduplication helper
 
 Usage
 -----
 ::
 
-    python vuln_oneliner.py lfi      --urls urls.txt --wordlist lfi_wordlist.txt
-    python vuln_oneliner.py redirect --urls urls.txt
-    python vuln_oneliner.py ssrf     --urls urls.txt --oob <interactsh_url>
-    python vuln_oneliner.py sqli     --urls urls.txt
-    python vuln_oneliner.py xss      --urls urls.txt
+    python vuln_oneliner.py lfi       --urls urls.txt --wordlist lfi_wordlist.txt
+    python vuln_oneliner.py redirect  --urls urls.txt
+    python vuln_oneliner.py ssrf      --urls urls.txt --oob <interactsh_url>
+    python vuln_oneliner.py sqli      --urls urls.txt
+    python vuln_oneliner.py ghauri    --urls urls.txt
+    python vuln_oneliner.py xss       --urls urls.txt
+    python vuln_oneliner.py xsstrike  --urls urls.txt [--fuzzer]
+    python vuln_oneliner.py ssti      --urls urls.txt
+    python vuln_oneliner.py cmdinj    --urls urls.txt
+    python vuln_oneliner.py xray      --urls urls.txt [--workspace /tmp/hunt]
+    python vuln_oneliner.py x8        --urls urls.txt [--wordlist params.txt]
+    python vuln_oneliner.py xss0r     --urls urls.txt
+    python vuln_oneliner.py confused  --files package.json [--lang npm]
 """
 
 from __future__ import annotations
@@ -390,6 +407,288 @@ def scan_xss(urls: List[str], concurrency: int = 100) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
+# XSStrike – advanced XSS detection  (Context7/s0md3v/xsstrike confirmed)
+# ---------------------------------------------------------------------------
+
+
+def scan_xss_xsstrike(
+    urls: List[str],
+    *,
+    crawl: bool = True,
+    fuzzer: bool = False,
+    blind_payload: str = "",
+) -> List[str]:
+    """XSS scanning via XSStrike.
+
+    Context7/s0md3v/xsstrike confirmed flags:
+      ``xsstrike -u URL``            – basic single-URL scan
+      ``--crawl``                    – crawl target and test all params
+      ``--fuzzer``                   – enable WAF-evasion fuzzer
+      ``--blind``                    – inject blind-XSS payloads
+
+    Returns list of URLs where XSStrike reported a finding.
+    """
+    findings: List[str] = []
+    deduped = _uro_deduplicate(urls)
+    for url in deduped:
+        cmd: List[str] = ["xsstrike", "-u", url]
+        if crawl:
+            cmd.append("--crawl")
+        if fuzzer:
+            cmd.append("--fuzzer")
+        if blind_payload:
+            # blind payload must be pre-configured in core/config.py;
+            # pass --blind to activate it
+            cmd.append("--blind")
+        rc, stdout, stderr = _run(cmd, timeout=180)
+        if rc == 127:
+            logger.warning("xsstrike not installed; skipping.")
+            break
+        combined = (stdout + stderr).lower()
+        if "xss" in combined or "vulnerability" in combined or "payload" in combined:
+            findings.append(url)
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# tplmap – SSTI detection & exploitation  (Context7/epinna/tplmap confirmed)
+# ---------------------------------------------------------------------------
+
+
+def scan_ssti(urls: List[str]) -> List[str]:
+    """SSTI detection via tplmap.
+
+    Context7/epinna/tplmap confirmed flags:
+      ``tplmap -u URL``              – auto-detect injection point
+      ``--os-cmd whoami``            – safe RCE confirmation (non-destructive)
+
+    Returns list of URLs where tplmap confirmed an injection point.
+    """
+    findings: List[str] = []
+    for url in _uro_deduplicate(urls):
+        # Detection only – no --os-shell or file operations
+        rc, stdout, stderr = _run(["tplmap", "-u", url], timeout=120)
+        if rc == 127:
+            logger.warning("tplmap not installed; skipping.")
+            break
+        combined = stdout + stderr
+        if "injection point" in combined.lower() or "tplmap identified" in combined.lower():
+            findings.append(url)
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# ghauri – advanced SQLi  (no Context7 doc; well-known CLI)
+# ---------------------------------------------------------------------------
+
+
+def scan_sqli_ghauri(
+    urls: List[str],
+    *,
+    request_file: Optional[str] = None,
+) -> List[str]:
+    """SQL injection via ghauri.
+
+    Canonical KB (Block 3) / well-known CLI:
+      ``ghauri -u URL --batch --dbs``       – enumerate databases
+      ``ghauri -r request.txt --batch``     – from raw HTTP request
+
+    Returns list of targets where ghauri detected SQLi.
+    """
+    findings: List[str] = []
+    if request_file:
+        rc, stdout, _ = _run(
+            ["ghauri", "-r", request_file, "--batch"],
+            timeout=300,
+        )
+        if rc == 127:
+            logger.warning("ghauri not installed; skipping.")
+            return findings
+        if "parameter" in stdout.lower() and "injectable" in stdout.lower():
+            findings.append(request_file)
+        return findings
+
+    for url in _uro_deduplicate(_gf_filter(urls, "sqli")):
+        rc, stdout, _ = _run(
+            ["ghauri", "-u", url, "--batch", "--dbs"],
+            timeout=300,
+        )
+        if rc == 127:
+            logger.warning("ghauri not installed; skipping.")
+            break
+        if "injectable" in stdout.lower() or "database:" in stdout.lower():
+            findings.append(url)
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# commix – command injection  (no Context7 doc; well-known CLI)
+# ---------------------------------------------------------------------------
+
+
+def scan_cmdinj(urls: List[str]) -> List[str]:
+    """Command injection detection via commix.
+
+    Well-known CLI:
+      ``commix --url URL --batch``   – non-interactive detection
+
+    Returns list of URLs where commix confirmed a command injection.
+    """
+    findings: List[str] = []
+    candidates = _uro_deduplicate(urls)
+    for url in candidates:
+        rc, stdout, _ = _run(
+            ["commix", "--url", url, "--batch"],
+            timeout=180,
+        )
+        if rc == 127:
+            logger.warning("commix not installed; skipping.")
+            break
+        if "exploitable" in stdout.lower() or "vuln" in stdout.lower():
+            findings.append(url)
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# xray – all-in-one crawler/scanner  (KB Block 6; no Context7 doc)
+# ---------------------------------------------------------------------------
+
+
+def scan_xray(targets: List[str], workspace: str = ".") -> List[str]:
+    """Multi-vector scanning via xray.
+
+    Canonical KB (Block 6):
+      ``xray ws --basic-crawler TARGET \\
+          --plugins xss,sqldet,xxe,ssrf,cmd-injection,path-traversal \\
+          --ho TIMESTAMP.html``
+
+    Returns list of generated HTML report paths.
+    """
+    import time as _time  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    reports: List[str] = []
+    ws = _Path(workspace)
+    ws.mkdir(parents=True, exist_ok=True)
+
+    for target in targets:
+        report_path = ws / f"xray_{_time.strftime('%H%M%S')}.html"
+        rc, _, stderr = _run(
+            [
+                "xray",
+                "ws",
+                "--basic-crawler", target,
+                "--plugins", "xss,sqldet,xxe,ssrf,cmd-injection,path-traversal",
+                "--ho", str(report_path),
+            ],
+            timeout=300,
+        )
+        if rc == 127:
+            logger.warning("xray not installed; skipping.")
+            break
+        if report_path.exists():
+            reports.append(str(report_path))
+        elif rc != 0:
+            logger.warning("xray: non-zero exit for %s – %s", target, stderr[:80])
+    return reports
+
+
+# ---------------------------------------------------------------------------
+# x8 – hidden parameter discovery  (no Context7 doc; well-known CLI)
+# ---------------------------------------------------------------------------
+
+_X8_WORDLISTS = [
+    "/usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt",
+    "/usr/share/wordlists/seclists/Discovery/Web-Content/burp-parameter-names.txt",
+    "parameters.txt",
+]
+
+
+def scan_hidden_params(
+    urls: List[str],
+    wordlist: Optional[str] = None,
+    method: str = "GET",
+) -> List[str]:
+    """Hidden parameter discovery via x8.
+
+    Well-known CLI:
+      ``x8 -u URL -w wordlist.txt -X GET``
+
+    Returns list of URLs where x8 found hidden parameters.
+    """
+    wl = wordlist or next(
+        (w for w in _X8_WORDLISTS if Path(w).exists()), None
+    )
+    if not wl:
+        logger.warning("x8: no wordlist found; skipping.")
+        return []
+
+    findings: List[str] = []
+    for url in _uro_deduplicate(urls):
+        rc, stdout, _ = _run(
+            ["x8", "-u", url, "-w", wl, "-X", method],
+            timeout=120,
+        )
+        if rc == 127:
+            logger.warning("x8 not installed; skipping.")
+            break
+        if stdout.strip():
+            findings.append(url)
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# xss0r – reflected parameter finder  (no Context7 doc; well-known CLI)
+# ---------------------------------------------------------------------------
+
+
+def scan_xss_xss0r(urls: List[str]) -> List[str]:
+    """Reflected XSS via xss0r.
+
+    Well-known CLI:
+      ``xss0r -u URL``
+
+    Returns list of URLs where xss0r reported a finding.
+    """
+    findings: List[str] = []
+    for url in _uro_deduplicate(_gf_filter(urls, "xss")):
+        rc, stdout, stderr = _run(["xss0r", "-u", url], timeout=120)
+        if rc == 127:
+            logger.warning("xss0r not installed; skipping.")
+            break
+        combined = (stdout + stderr).lower()
+        if "vulnerable" in combined or "xss" in combined:
+            findings.append(url)
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# confused – dependency confusion  (no Context7 doc; well-known CLI)
+# ---------------------------------------------------------------------------
+
+
+def scan_dep_confusion(json_files: List[str], lang: str = "npm") -> List[str]:
+    """Dependency confusion detection via confused.
+
+    Canonical KB (Block 6):
+      ``confused -l npm package.json``
+
+    Returns list of package.json / requirements.txt files with findings.
+    """
+    findings: List[str] = []
+    for json_file in json_files:
+        if not Path(json_file).exists():
+            continue
+        rc, stdout, _ = _run(["confused", "-l", lang, json_file], timeout=60)
+        if rc == 127:
+            logger.warning("confused not installed; skipping.")
+            break
+        if "issues found" in stdout.lower() or "vulnerability" in stdout.lower():
+            findings.append(json_file)
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -398,7 +697,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser(
-        description="Vuln one-liners: LFI / Redirect / SSRF / SQLi / XSS"
+        description=(
+            "Vuln one-liners: LFI / Redirect / SSRF / SQLi / XSS / "
+            "XSStrike / SSTI / CmdInj / Ghauri / xray / x8 / xss0r / confused"
+        )
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -421,11 +723,54 @@ def main() -> None:
     p_sqli.add_argument("--tamper", default=None)
     p_sqli.add_argument("--tor", action="store_true")
 
+    p_ghauri = sub.add_parser("ghauri", help="SQLi scan via ghauri")
+    p_ghauri.add_argument("--urls", required=True)
+    p_ghauri.add_argument("--request-file", default=None)
+
     p_xss = sub.add_parser("xss", help="XSS scan via Gxss+dalfox")
     p_xss.add_argument("--urls", required=True)
     p_xss.add_argument("--concurrency", type=int, default=100)
 
+    p_xsstrike = sub.add_parser("xsstrike", help="XSS scan via XSStrike")
+    p_xsstrike.add_argument("--urls", required=True)
+    p_xsstrike.add_argument("--no-crawl", action="store_true")
+    p_xsstrike.add_argument("--fuzzer", action="store_true")
+
+    p_ssti = sub.add_parser("ssti", help="SSTI detection via tplmap")
+    p_ssti.add_argument("--urls", required=True)
+
+    p_cmdinj = sub.add_parser("cmdinj", help="Command injection via commix")
+    p_cmdinj.add_argument("--urls", required=True)
+
+    p_xray = sub.add_parser("xray", help="Multi-vector scan via xray")
+    p_xray.add_argument("--urls", required=True)
+    p_xray.add_argument("--workspace", default=".")
+
+    p_x8 = sub.add_parser("x8", help="Hidden parameter discovery via x8")
+    p_x8.add_argument("--urls", required=True)
+    p_x8.add_argument("--wordlist", default=None)
+    p_x8.add_argument("--method", default="GET")
+
+    p_xss0r = sub.add_parser("xss0r", help="Reflected XSS via xss0r")
+    p_xss0r.add_argument("--urls", required=True)
+
+    p_confused = sub.add_parser("confused", help="Dependency confusion via confused")
+    p_confused.add_argument("--files", required=True, nargs="+", metavar="JSON_FILE")
+    p_confused.add_argument("--lang", default="npm")
+
     args = parser.parse_args()
+
+    # Commands that don't need a urls file
+    if args.cmd == "confused":
+        results = scan_dep_confusion(args.files, lang=args.lang)
+        _print_results(results)
+        return
+    if args.cmd == "xray":
+        targets = _read_urls(args.urls)
+        reports = scan_xray(targets, workspace=args.workspace)
+        _print_results(reports)
+        return
+
     urls = _read_urls(args.urls)
 
     if args.cmd == "lfi":
@@ -443,9 +788,35 @@ def main() -> None:
         output = scan_sqli(urls, tamper=args.tamper, use_tor=args.tor)
         print(output or "[-] No SQLi findings.")
         return
-    else:  # xss
+    elif args.cmd == "ghauri":
+        results = scan_sqli_ghauri(
+            urls, request_file=getattr(args, "request_file", None)
+        )
+    elif args.cmd == "xss":
         results = scan_xss(urls, concurrency=args.concurrency)
+    elif args.cmd == "xsstrike":
+        results = scan_xss_xsstrike(
+            urls,
+            crawl=not args.no_crawl,
+            fuzzer=args.fuzzer,
+        )
+    elif args.cmd == "ssti":
+        results = scan_ssti(urls)
+    elif args.cmd == "cmdinj":
+        results = scan_cmdinj(urls)
+    elif args.cmd == "x8":
+        results = scan_hidden_params(
+            urls,
+            wordlist=getattr(args, "wordlist", None),
+            method=args.method,
+        )
+    else:  # xss0r
+        results = scan_xss_xss0r(urls)
 
+    _print_results(results)
+
+
+def _print_results(results: List[str]) -> None:
     if results:
         print(f"[+] {len(results)} result(s):")
         for r in results:
