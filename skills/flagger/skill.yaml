@@ -1,0 +1,15 @@
+name: flagger
+description: Anti-AI Flag Hardening & Poisoning. Tiered obfuscation and prompt injections to protect CTF flags from AI solvers.
+actions:
+  harden:
+    description: Harden a flag with multi-layer obfuscation and anti-AI-poisoning.
+    params:
+      flag: Original flag string.
+      level: [moderate, difficult, expert]
+      type: [reverse, web]
+  poison:
+    description: Generate anti-AI prompt injections.
+    params:
+      level: [moderate, difficult, expert]
+dependencies:
+  python: [pydantic]

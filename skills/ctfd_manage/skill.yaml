@@ -1,0 +1,119 @@
+name: ctfd_manage
+description: |
+  CTFd lifecycle management and administration skill.
+  
+  Provides comprehensive management operations for CTFd instances:
+  - Challenge lifecycle (create, update, delete, bulk operations)
+  - Team/user management (create, modify, reset passwords)
+  - Event control (start, pause, freeze, end, reset)
+  - Scoring operations (manual adjustments, recalculations)
+  - Configuration management (export, import, backup, restore)
+  - Statistics and reporting (scoreboard, solve rates, analytics)
+  
+  Works with existing or newly deployed CTFd instances via API.
+
+category: ctfd
+agent: false
+enabled: true
+
+inputs:
+  - ctfd_url             # CTFd instance URL
+  - username             # Admin username (optional if api_token)
+  - password             # Admin password (optional if api_token)
+  - api_token            # API token (preferred method)
+  - action               # Management action to perform (required)
+  - params               # Action-specific parameters (dict)
+
+actions:
+  # Challenge Management
+  - create_challenge     # Create new challenge
+  - update_challenge     # Modify existing challenge
+  - delete_challenge     # Remove challenge
+  - bulk_import          # Import multiple challenges from JSON
+  - bulk_export          # Export challenges to JSON
+  - hide_challenge       # Make challenge invisible
+  - show_challenge       # Make challenge visible
+  
+  # Team/User Management
+  - create_team          # Create new team
+  - delete_team          # Remove team
+  - create_user          # Create new user
+  - reset_password       # Reset user/team password
+  - ban_user             # Ban user from competition
+  - unban_user           # Unban user
+  
+  # Event Control
+  - start_event          # Open event (enable registration/challenges)
+  - pause_event          # Pause event (freeze submissions)
+  - end_event            # End event (freeze scoreboard, disable submissions)
+  - reset_event          # Clear all submissions and reset scoreboard
+  - freeze_scoreboard    # Freeze scoreboard visibility
+  - unfreeze_scoreboard  # Unfreeze scoreboard
+  
+  # Scoring
+  - adjust_score         # Manually adjust team score
+  - recalculate_scores   # Recalculate all scores
+  - award_bonus_points   # Award bonus points to team
+  
+  # Configuration
+  - export_config        # Export CTFd configuration
+  - import_config        # Import CTFd configuration
+  - backup_database      # Create database backup
+  - restore_database     # Restore from backup
+  - get_statistics       # Get event statistics
+  - get_scoreboard       # Get current scoreboard
+
+tools:
+  - CTFd API Client (api_client.py)
+  - Docker commands (for backup/restore)
+
+outputs:
+  - status               # success, failed, partial
+  - result               # Action-specific result data
+  - message              # Human-readable status message
+  - affected_items       # Count of items affected by action
+
+examples:
+  - description: Create a new challenge
+    input:
+      ctfd_url: "http://localhost:8000"
+      api_token: "your-token"
+      action: "create_challenge"
+      params:
+        name: "Crypto 101"
+        category: "crypto"
+        description: "Basic Caesar cipher challenge"
+        value: 100
+        flags: [{"content": "flag{caesar_shift_13}", "type": "static"}]
+  
+  - description: Export all challenges
+    input:
+      ctfd_url: "http://localhost:8000"
+      api_token: "your-token"
+      action: "bulk_export"
+      params:
+        output_file: "./my_challenges.json"
+  
+  - description: Reset event for practice run
+    input:
+      ctfd_url: "http://localhost:8000"
+      api_token: "your-token"
+      action: "reset_event"
+      params:
+        confirm: true
+  
+  - description: Get current scoreboard
+    input:
+      ctfd_url: "http://localhost:8000"
+      api_token: "your-token"
+      action: "get_scoreboard"
+      params:
+        top_n: 20
+
+metadata:
+  version: "1.0.0"
+  author: "Purple Engine Team"
+  requires:
+    - ctfd_api_client
+  permissions:
+    - admin  # Requires admin privileges for most operations

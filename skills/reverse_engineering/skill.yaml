@@ -1,0 +1,27 @@
+name: "reverse_engineering"
+description: "Binary Analyst: Technical Analysis (ELF/PE/ASM) & Technique-to-Logic Mapping. Analyzes disassembly, symbols, and headers."
+version: "2.0.0"
+author: "Antigravity-C13"
+
+# Binary Analyst Handlers
+handlers:
+  - name: "BinaryHandler"
+    path: "handlers/binary_handler.py"
+    modes: ["disassemble", "symbols", "elf_info"]
+
+# LLM-Driven Engines
+engines:
+  - name: "TechDesigner"
+    path: "engines/tech_designer.py"
+    model: "groq/llama-3.3-70b-versatile"
+
+# Actions Supported
+actions:
+  - "analyze"
+  - "think"
+
+# Tool Dependencies
+tools:
+  - "objdump"
+  - "nm"
+  - "readelf"

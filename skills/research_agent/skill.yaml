@@ -1,0 +1,54 @@
+name: research-agent
+version: "1.0.0"
+description: |
+  Research Agent Orchestrator for Purple Engine.
+  
+  Coordinates autonomous vulnerability research using:
+  - RAG knowledge base for context
+  - Multi-agent swarms for parallel research
+  - Vulnerability discovery and validation
+  - CTF challenge generation from findings
+
+author: Purple Engine Team
+license: MIT
+
+category: research
+tags:
+  - research
+  - orchestrator
+  - agent
+  - vulnerability
+  - autonomous
+
+inputs:
+  mode:
+    type: string
+    required: true
+    enum: [research, hunt, validate, generate, full_cycle]
+    description: Research mode
+  
+  target:
+    type: string
+    required: false
+    description: Target for research (URL, repo, topic, CVE ID)
+  
+  topic:
+    type: string
+    required: false
+    description: Research topic
+  
+  depth:
+    type: string
+    required: false
+    default: medium
+    enum: [quick, medium, deep]
+
+outputs:
+  status:
+    type: string
+  findings:
+    type: array
+  report:
+    type: string
+
+kavach_policy: standard

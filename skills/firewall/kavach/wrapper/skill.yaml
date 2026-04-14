@@ -1,0 +1,126 @@
+name: kavach_wrapper
+version: 1.0.0
+description: |
+  Kavach AI Firewall Skill Wrapper
+  
+  Provides CLI interface for managing Kavach security layer operations:
+  - Enable/disable protection for specific skills
+  - Query and analyze audit logs
+  - Manage phantom workspace (commit/rollback)
+  - Deploy and cleanup honeypot tripwires
+  - Verify audit ledger integrity
+  
+  This skill exposes Kavach functionality to the Purple Engine MCP server
+  and allows other skills to interact with the security layer.
+
+category: security
+author: Purple Engine Team
+tags:
+  - security
+  - firewall
+  - edr
+  - monitoring
+  - audit
+
+inputs:
+  action:
+    type: string
+    required: true
+    description: |
+      Kavach operation to perform:
+      - status: Show protection status for all skills
+      - enable: Enable Kavach protection for a skill
+      - disable: Disable Kavach protection for a skill
+      - audit_query: Query audit log with filters
+      - audit_verify: Verify audit ledger integrity
+      - phantom_commit: Commit phantom workspace changes
+      - phantom_rollback: Rollback specific file from snapshot
+      - phantom_status: Show phantom workspace operations
+      - tripwire_deploy: Deploy honeypot files
+      - tripwire_cleanup: Remove all deployed tripwires
+      - tripwire_status: Show tripwire access log
+      - pii_summary: Get PII detection summary
+  
+  skill_name:
+    type: string
+    required: false
+    description: Skill name (for enable/disable actions)
+  
+  file_path:
+    type: string
+    required: false
+    description: File path (for phantom_rollback action)
+  
+  filters:
+    type: object
+    required: false
+    description: |
+      Filters for audit_query action:
+      - event_type: Filter by event type
+      - severity: Filter by severity (LOW, MEDIUM, HIGH, CRITICAL)
+      - skill_name: Filter by skill name
+      - limit: Maximum results to return (default: 100)
+
+outputs:
+  status:
+    type: string
+    description: Operation status (success/error)
+  
+  result:
+    type: object
+    description: Operation result data
+  
+  message:
+    type: string
+    description: Human-readable status message
+
+examples:
+  - description: Show protection status for all skills
+    input:
+      action: status
+    output:
+      status: success
+      result:
+        protected_skills: ["ctfd_solve", "ctfd_setup"]
+        unprotected_skills: ["ctfd_manage"]
+  
+  - description: Enable protection for a skill
+    input:
+      action: enable
+      skill_name: research_agent
+    output:
+      status: success
+      message: "Kavach protection enabled for research_agent"
+  
+  - description: Query audit log for critical events
+    input:
+      action: audit_query
+      filters:
+        severity: CRITICAL
+        limit: 50
+    output:
+      status: success
+      result:
+        events: [...]
+        count: 12
+  
+  - description: Verify audit ledger integrity
+    input:
+      action: audit_verify
+    output:
+      status: success
+      result:
+        is_valid: true
+        errors: []
+  
+  - description: Deploy honeypot tripwires
+    input:
+      action: tripwire_deploy
+    output:
+      status: success
+      message: "Deployed 3 tripwire files"
+
+integration:
+  mcp_server: true
+  registry_hook: true
+  cli_exposed: true

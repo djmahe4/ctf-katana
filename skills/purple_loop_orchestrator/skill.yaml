@@ -1,0 +1,45 @@
+name: purple-loop-orchestrator
+version: "1.0.0"
+description: |
+  Purple Loop Orchestrator (The Conductor)
+  
+  Orchestrates the intelligence-augmented CTF generation pipeline by chaining:
+  Research (RAG) -> Challenge Generation (Intelligence-Augmented) -> Flagger -> CTFd Setup.
+
+author: Purple Engine Team
+license: MIT
+
+category: automation
+tags:
+  - purple-loop
+  - orchestration
+  - automation
+  - ctf
+
+inputs:
+  target:
+    type: string
+    required: true
+    description: "The research target (e.g., CVE-ID or URL)"
+  difficulty:
+    type: string
+    required: false
+    default: medium
+    enum: [easy, medium, hard, insane]
+  ai_hardening:
+    type: string
+    required: false
+    default: standard
+    enum: [none, standard, aggressive]
+
+outputs:
+  status:
+    type: string
+  challenge_id:
+    type: string
+  ctfd_url:
+    type: string
+  steps_completed:
+    type: array
+
+kavach_policy: standard

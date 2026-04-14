@@ -1,0 +1,42 @@
+name: forensics
+version: "1.1.0"
+description: Advanced File Carving, Network Steganography, and Challenge Design
+category: forensics
+tags:
+  - forensics
+  - pcap
+  - steganography
+  - carving
+  - scapy
+
+inputs:
+  target:
+    type: string
+    required: false
+    description: Target file or directory for analysis.
+  action:
+    type: string
+    required: false
+    default: file_magic
+    enum: [file_magic, foremost, pngcheck, pdf_text, extract, embed, think]
+  mode:
+    type: string
+    required: false
+    default: auto
+    enum: [file, pcap, network, auto]
+  method:
+    type: string
+    required: false
+    description: Steganography method (ip_frag, tcp_opt, icmp_ts, dns_srv, ether_mac)
+  prompt:
+    type: string
+    required: false
+    description: Designer prompt for LLM-based challenge brainstorming
+
+tools:
+  - scapy
+  - foremost
+  - pngcheck
+  - pdftotext
+  - file
+  - free-llm-apis

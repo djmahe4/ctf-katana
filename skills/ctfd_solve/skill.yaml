@@ -1,0 +1,93 @@
+name: ctfd_solve
+description: |
+  Autonomously solve CTFd challenges using the Purple Engine's 6-step agent loop.
+  
+  This skill:
+  1. Connects to CTFd instance using API credentials
+  2. Lists available challenges or gets details for specific challenge
+  3. Downloads all challenge artifacts (files, descriptions)
+  4. Invokes the existing 6-step agent loop:
+     - Analyze: Classify challenge and detect category
+     - Search KB: Find relevant tools and techniques
+     - Plan: Generate step-by-step solving strategy
+     - Execute: Run tools and techniques
+     - Interpret: Analyze results and extract flags
+     - Report: Generate write-up and PoC exploit
+  5. Auto-submits discovered flags via CTFd API
+  6. Generates professional Markdown write-up with screenshots
+  7. Optionally creates video demo script stub
+  
+  Supports all CTF categories: crypto, stego, forensics, web, pwn, reversing, recon, misc
+
+category: ctfd
+agent: true
+enabled: true
+
+inputs:
+  - ctfd_url           # CTFd instance URL (e.g., http://localhost:8000)
+  - username           # CTFd username (optional if api_token provided)
+  - password           # CTFd password (optional if api_token provided)
+  - api_token          # CTFd API token (alternative to username/password)
+  - challenge_id       # Specific challenge ID to solve (optional - if not provided, lists all)
+  - challenge_name     # Alternative: challenge name to solve (optional)
+  - category           # Filter by category (optional)
+  - auto_submit        # Auto-submit flags when found (default: true)
+  - generate_writeup   # Generate write-up after solving (default: true)
+  - output_dir         # Directory to save artifacts and write-ups (default: ./ctfd_output)
+  - max_retries        # Maximum solve retry attempts (default: 3)
+
+tools:
+  - CTFd API Client (api_client.py)
+  - All existing Katana skills (crypto, stego, forensics, web, pwn, reversing, recon)
+  - AnalyzerAgent (challenge classification)
+  - PlannerAgent (strategy generation)
+  - ExecutorAgent (result interpretation)
+  - ReporterAgent (write-up generation)
+  - Ollama LLM (mistral-nemo or configured model)
+
+outputs:
+  - solved_challenges  # List of successfully solved challenges
+  - flags_found        # Discovered flags
+  - flags_submitted    # Flags successfully submitted to CTFd
+  - writeups           # Generated write-up files
+  - exploit_scripts    # PoC exploit scripts
+  - execution_log      # Detailed solving process log
+
+examples:
+  - description: Solve all unsolved challenges in crypto category
+    input:
+      ctfd_url: "http://localhost:8000"
+      api_token: "your-api-token"
+      category: "crypto"
+      auto_submit: true
+      generate_writeup: true
+  
+  - description: Solve specific challenge by ID without auto-submit
+    input:
+      ctfd_url: "http://ctf.example.com"
+      username: "hacker"
+      password: "password123"
+      challenge_id: 42
+      auto_submit: false
+      output_dir: "./writeups/challenge_42"
+  
+  - description: List all available challenges
+    input:
+      ctfd_url: "http://localhost:8000"
+      api_token: "your-api-token"
+      # No challenge_id or challenge_name = list mode
+
+metadata:
+  version: "1.0.0"
+  author: "Purple Engine Team"
+  requires:
+    - ollama
+    - ctfd_api_client
+    - existing_katana_agents
+  performance:
+    avg_solve_time: "5-30 minutes per challenge"
+    success_rate: "60-80% depending on challenge complexity"
+  limitations:
+    - "Cannot solve challenges requiring manual interaction (e.g., GUI apps)"
+    - "May struggle with novel/unique challenge types not in KB"
+    - "Network challenges requiring specific infrastructure may fail"

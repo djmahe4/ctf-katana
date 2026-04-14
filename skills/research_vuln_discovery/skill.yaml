@@ -1,0 +1,50 @@
+name: vuln-discovery
+version: "1.0.0"
+description: |
+  Automated vulnerability discovery engine.
+  
+  Combines static analysis, dynamic testing, and 
+  knowledge-guided hunting to discover vulnerabilities.
+
+author: Purple Engine Team
+license: MIT
+
+category: research
+tags:
+  - vulnerability
+  - discovery
+  - hunting
+  - automation
+
+inputs:
+  target:
+    type: string
+    required: true
+    description: Target for discovery (path, URL, repo)
+  
+  target_type:
+    type: string
+    required: false
+    default: auto
+    enum: [auto, code, web, repo, binary]
+  
+  vuln_classes:
+    type: array
+    required: false
+    description: Specific vulnerability classes to hunt
+  
+  depth:
+    type: string
+    required: false
+    default: medium
+    enum: [quick, medium, deep]
+
+outputs:
+  status:
+    type: string
+  vulnerabilities:
+    type: array
+  summary:
+    type: object
+
+kavach_policy: standard

@@ -1,0 +1,36 @@
+# Skill registry – lists every skill the MCP server exposes.
+#
+# The server scans the skills/ directory for skill.yaml files automatically.
+# This file provides an ordered overview and can be used to disable specific
+# skills by setting  enabled: false.
+
+skills:
+  - name: analysis
+    enabled: true
+
+  - name: crypto_solver
+    enabled: true
+
+  - name: stego_solver
+    enabled: true
+
+  - name: forensics
+    enabled: true
+
+  - name: web_exploit
+    enabled: true
+
+  - name: reverse_engineering
+    enabled: true
+
+  - name: binary_exploit
+    enabled: true
+
+  - name: recon
+    enabled: true
+
+  - name: exploit_gen
+    enabled: true
+
+  - name: writeup_generator
+    enabled: true

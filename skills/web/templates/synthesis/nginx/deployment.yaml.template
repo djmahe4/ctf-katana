@@ -1,0 +1,45 @@
+# K8s Deployment for Vulnerable Nginx Challenge
+# Template for: {{ VULN_TYPE }}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ CHALLENGE_NAME }}-deployment
+  labels:
+    app: {{ CHALLENGE_NAME }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ CHALLENGE_NAME }}
+  template:
+    metadata:
+      labels:
+        app: {{ CHALLENGE_NAME }}
+    spec:
+      containers:
+      - name: {{ CHALLENGE_NAME }}
+        image: {{ CHALLENGE_NAME }}:latest
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: "50m"
+            memory: "64Mi"
+          requests:
+            cpu: "20m"
+            memory: "32Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ CHALLENGE_NAME }}-service
+spec:
+  selector:
+    app: {{ CHALLENGE_NAME }}
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer

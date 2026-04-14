@@ -1,0 +1,15 @@
+# Tomcat Context Protection Valve
+# Filename: context_security.xml
+
+<Context>
+  <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+         allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1" />
+  
+  <CookieProcessor sameSiteCookies="strict" />
+</Context>
+
+# Tomcat AJP Hardening (Ghostcat)
+# Restricted AJP in server.xml
+# address="127.0.0.1"
+# secretRequired="true"
+# secret="REPLACE_WITH_UUID"

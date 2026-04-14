@@ -1,0 +1,29 @@
+name: "reverse"
+description: "Logic Architect: Bi-directional Logic RE & Challenge Synthesis. Uses 'Creator Thinking' to reverse logic and 'Attacker Thinking' to create challenges."
+version: "2.0.0"
+author: "Antigravity-C13"
+
+# Logic Architect Handlers
+handlers:
+  - name: "LogicHandler"
+    path: "handlers/logic_handler.py"
+    modes: ["offensive", "logic_re", "synergy"]
+  - name: "SynthesisHandler"
+    path: "handlers/synthesis_handler.py"
+    modes: ["synthesis", "challenge_gen", "synergy"]
+
+# LLM-Driven Engines
+engines:
+  - name: "REDesigner"
+    path: "engines/re_designer.py"
+    model: "groq/llama-3.3-70b-versatile"
+
+# Actions Supported
+actions:
+  - "analyze"
+  - "create"
+  - "think"
+
+dependencies:
+  - "pydantic"
+  - "argparse"

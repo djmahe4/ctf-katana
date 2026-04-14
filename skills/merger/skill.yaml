@@ -1,0 +1,38 @@
+name: merger
+version: "1.0.0"
+description: |
+  Unifies multiple web-based challenge components into a single interface.
+  Handles port remapping, architectural mergeability checks, and landing page generation.
+
+author: Purple Engine Team
+license: MIT
+
+category: orchestration
+tags:
+  - merger
+  - web
+  - docker-compose
+  - unified-interface
+
+entrypoint: run.py
+
+inputs:
+  selected_components:
+    type: array
+    required: true
+    description: List of challenge manifests to merge.
+  
+  target_session:
+    type: string
+    required: true
+    description: The session identifier for the merged challenge.
+
+outputs:
+  merged_challenge:
+    type: object
+  merged_files:
+    type: array
+  validation_report:
+    type: string
+
+kavach_policy: restricted

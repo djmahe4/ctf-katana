@@ -1,0 +1,47 @@
+name: android-analyzer
+version: "1.0.0"
+description: |
+  Android Application Security Analyzer
+  
+  Comprehensive Android app security analysis:
+  - APK static analysis
+  - Manifest inspection
+  - Code review
+  - Frida instrumentation support
+
+author: Purple Engine Team
+license: MIT
+
+category: android
+tags:
+  - android
+  - mobile
+  - apk
+  - security
+  - frida
+
+inputs:
+  target:
+    type: string
+    required: true
+    description: APK file path or package name
+  
+  mode:
+    type: string
+    required: false
+    default: full
+    enum: [static, manifest, permissions, components, crypto, storage, full]
+
+outputs:
+  status:
+    type: string
+  vulnerabilities:
+    type: array
+  permissions:
+    type: array
+  components:
+    type: object
+  report:
+    type: string
+
+kavach_policy: standard

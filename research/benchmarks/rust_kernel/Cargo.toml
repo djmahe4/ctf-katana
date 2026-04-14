@@ -1,0 +1,10 @@
+[package]
+name = "rust_kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rayon = "1.10.0"
+hex = "0.4.3"
+indicatif = "0.17.8" # Optional: ProgressBar for better thesis visuals
+num_cpus = "1.16.0"

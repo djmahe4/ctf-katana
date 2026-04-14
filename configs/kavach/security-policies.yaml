@@ -1,0 +1,298 @@
+# Kavach Security Policies Configuration
+#
+# Defines security rules for wrapping Purple Engine MCP skill executions.
+# Based on the original Kavach EDR architecture (github.com/LucidAkshay/kavach).
+#
+# Policy Profiles:
+# - strict: Maximum security (recommended for untrusted/experimental skills)
+# - standard: Balanced security (recommended for production)
+# - permissive: Minimal restrictions (for debugging/development)
+#
+# Usage:
+#   policy = SecurityPolicy.from_yaml(Path("configs/kavach/security-policies.yaml"))
+
+# Global default profile (can be overridden per-skill)
+default_profile: "standard"
+
+# ============================================================================
+# STRICT PROFILE - Maximum Security
+# ============================================================================
+profiles:
+  strict:
+    # File Access Control
+    allowed_read_paths:
+      - "context/*"          # Read from knowledge base
+      - "skills/*"           # Read skill files
+      - "configs/*"          # Read configurations
+      - "tools/*"            # Read tool implementations
+    
+    allowed_write_paths:
+      - "context/outputs/*"  # Write to outputs directory only
+      - "/tmp/*"             # Temporary files
+      - "~/.cache/purple-engine/*"  # Cache directory
+    
+    blocked_paths:
+      - "~/.ssh/*"           # SSH keys
+      - "~/.aws/*"           # AWS credentials
+      - "~/.config/gcloud/*" # Google Cloud credentials
+      - "*.key"              # Private keys
+      - "*.pem"              # PEM certificates
+      - "*.env"              # Environment files
+      - ".env.*"             # Environment variants
+      - ".git/config"        # Git configuration
+      - "*.sqlite"           # Database files (unless explicitly allowed)
+      - "server/mcp_server.py"  # Core MCP server (read-only)
+      - "agents/*"           # Agent definitions (read-only)
+    
+    # Network Access Control
+    allow_network: false     # No network access by default
+    allowed_domains: []      # Whitelist (empty = block all)
+    blocked_domains:
+      - "*"                  # Block everything
+    
+    # Process Control
+    max_child_processes: 3   # Maximum spawned processes
+    execution_timeout: 60    # Auto-enforcer timeout (seconds)
+    
+    # PII Protection
+    sanitize_pii: true       # Enable PII detection and redaction
+    pii_patterns:
+      openai_key: 'sk-[A-Za-z0-9]{48}'
+      aws_key: 'AKIA[0-9A-Z]{16}'
+      github_token: 'ghp_[A-Za-z0-9]{36}'
+      credit_card: '\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+      email: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+      private_key: '-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----'
+      jwt_token: 'eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+      password: '(password|passwd|pwd)\s*[:=]\s*[^\s]+'
+      api_key_generic: '[A-Za-z0-9]{32,64}'
+    
+    # Tripwire Configuration
+    enable_tripwires: true
+    tripwire_files:
+      system_auth_tokens.json: '{"aws_key": "AKIA1234567890ABCDEF", "openai_key": "sk-FAKE"}'
+      .env.production: "DATABASE_PASSWORD=SuperSecret123\nAPI_KEY=deadbeef"
+      credentials.txt: "username: admin\npassword: Admin123!"
+      config.ini: "[database]\nhost=localhost\nuser=root\npassword=toor"
+    
+    # Phantom Workspace
+    enable_phantom_workspace: true
+    phantom_dir_name: ".kavach_phantom"
+    
+    # Circuit Breaker
+    max_errors_before_shutdown: 3
+    loop_detection_threshold: 5  # Trigger after 5 identical commands
+    
+    # Monitoring
+    enable_file_watching: true
+    enable_process_monitoring: true
+    enable_audit_logging: true
+
+# ============================================================================
+# STANDARD PROFILE - Balanced Security (Recommended)
+# ============================================================================
+  standard:
+    # File Access Control
+    allowed_read_paths:
+      - "*"                  # Read anything (except blocked)
+    
+    allowed_write_paths:
+      - "context/*"
+      - "skills/*/outputs/*"
+      - "/tmp/*"
+      - "~/.cache/purple-engine/*"
+      - "tools/outputs/*"
+    
+    blocked_paths:
+      - "~/.ssh/*"
+      - "~/.aws/*"
+      - "~/.config/gcloud/*"
+      - "*.key"
+      - "*.pem"
+      - ".env"
+      - ".git/config"
+      - "server/mcp_server.py"
+    
+    # Network Access Control
+    allow_network: true
+    allowed_domains:
+      - "*"                  # Allow all domains (except blocked)
+    blocked_domains:
+      - "*.onion"            # Block Tor
+      - "*.i2p"              # Block I2P
+    
+    # Process Control
+    max_child_processes: 10
+    execution_timeout: 300   # 5 minutes
+    
+    # PII Protection
+    sanitize_pii: true
+    pii_patterns:
+      openai_key: 'sk-[A-Za-z0-9]{48}'
+      aws_key: 'AKIA[0-9A-Z]{16}'
+      github_token: 'ghp_[A-Za-z0-9]{36}'
+      private_key: '-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----'
+    
+    # Tripwires
+    enable_tripwires: true
+    tripwire_files:
+      system_auth_tokens.json: '{"aws_key": "AKIA1234567890ABCDEF"}'
+      .env.production: "API_KEY=fake_key_12345"
+    
+    # Phantom Workspace
+    enable_phantom_workspace: true
+    phantom_dir_name: ".kavach_phantom"
+    
+    # Circuit Breaker
+    max_errors_before_shutdown: 5
+    loop_detection_threshold: 10
+    
+    # Monitoring
+    enable_file_watching: true
+    enable_process_monitoring: true
+    enable_audit_logging: true
+
+# ============================================================================
+# PERMISSIVE PROFILE - Minimal Restrictions (Development Only)
+# ============================================================================
+  permissive:
+    # File Access Control
+    allowed_read_paths:
+      - "*"
+    allowed_write_paths:
+      - "*"
+    blocked_paths: []
+    
+    # Network Access Control
+    allow_network: true
+    allowed_domains:
+      - "*"
+    blocked_domains: []
+    
+    # Process Control
+    max_child_processes: 20
+    execution_timeout: 600   # 10 minutes
+    
+    # PII Protection
+    sanitize_pii: false      # Disabled for development
+    pii_patterns: {}
+    
+    # Tripwires
+    enable_tripwires: false  # Disabled for development
+    tripwire_files: {}
+    
+    # Phantom Workspace
+    enable_phantom_workspace: false  # Disabled for development
+    phantom_dir_name: ".kavach_phantom"
+    
+    # Circuit Breaker
+    max_errors_before_shutdown: 10
+    loop_detection_threshold: 20
+    
+    # Monitoring
+    enable_file_watching: false
+    enable_process_monitoring: false
+    enable_audit_logging: true  # Keep audit log even in permissive mode
+
+# ============================================================================
+# PER-SKILL OVERRIDES
+# ============================================================================
+# Override default profile for specific skills
+skill_overrides:
+  # CTFd skills use standard profile (network required for API calls)
+  ctfd_setup:
+    profile: "standard"
+    allow_network: true
+    allowed_domains:
+      - "localhost"
+      - "127.0.0.1"
+      - "*.ctfd.io"
+  
+  ctfd_solve:
+    profile: "standard"
+    allow_network: true
+    execution_timeout: 600  # Challenge solving can take time
+  
+  ctfd_manage:
+    profile: "standard"
+    allow_network: true
+  
+  # Research agent needs network for external resource fetching
+  research_agent:
+    profile: "standard"
+    allow_network: true
+    allowed_domains:
+      - "github.com"
+      - "raw.githubusercontent.com"
+      - "*.youtube.com"
+      - "arxiv.org"
+      - "nvd.nist.gov"  # CVE database
+  
+  # Unknown/experimental skills default to strict
+  __default__:
+    profile: "strict"
+
+# ============================================================================
+# AUDIT LOGGING CONFIGURATION
+# ============================================================================
+audit:
+  ledger_path: "~/.purple-engine/kavach_audit.jsonl"
+  max_ledger_size_mb: 100
+  rotate_on_size_exceeded: true
+  enable_integrity_check_on_startup: true
+  
+  # Events to log
+  log_events:
+    - execution_start
+    - execution_success
+    - execution_error
+    - pii_detected
+    - tripwire_triggered
+    - file_access_violation
+    - network_access_violation
+    - process_limit_exceeded
+    - loop_detected
+    - circuit_breaker
+    - phantom_workspace_operation
+
+# ============================================================================
+# NOTIFICATION CONFIGURATION
+# ============================================================================
+notifications:
+  # Alert on critical security events
+  enable_alerts: true
+  alert_severity_threshold: "HIGH"  # LOW, MEDIUM, HIGH, CRITICAL
+  
+  # Alert channels
+  channels:
+    - type: "log"       # Always log to audit ledger
+    - type: "terminal"  # Print to terminal/console
+    # - type: "email"   # Send email alerts (configure SMTP)
+    # - type: "webhook" # HTTP webhook for external systems
+  
+  # Rate limiting for alerts (prevent alert spam)
+  max_alerts_per_minute: 10
+
+# ============================================================================
+# ADVANCED CONFIGURATION
+# ============================================================================
+advanced:
+  # Faraday Clipboard Guard (monitors clipboard for stolen secrets)
+  enable_clipboard_monitoring: false  # Disabled by default (requires pyperclip)
+  clipboard_entropy_threshold: 4.5    # Shannon entropy threshold
+  
+  # Supply Chain Auditor (CVE scanning of dependencies)
+  enable_supply_chain_auditing: false  # Disabled by default (requires safety)
+  audit_on_startup: true
+  audit_package_files:
+    - "requirements.txt"
+    - "package.json"
+    - "Pipfile"
+  
+  # Blast Radius Prediction (analyze dependencies before file deletion)
+  enable_blast_radius_analysis: false  # Disabled by default (requires AST parsing)
+  
+  # CPU Throttling (PID Chokehold from original Kavach)
+  enable_cpu_throttling: false  # Disabled by default (requires OS privileges)
+  cpu_throttle_threshold: 80.0  # % CPU usage
+  throttled_priority: "IDLE"    # IDLE, BELOW_NORMAL, NORMAL

@@ -1,0 +1,58 @@
+name: bug_hunting
+description: |
+  Bug bounty and CTF vulnerability hunting skill.
+
+  Implements the Purple Engine 6-step loop (Analyze → Search KB → Plan →
+  Execute → Interpret → Report) to discover web vulnerabilities including
+  subdomain enumeration, port scanning, URL collection, and nuclei-based
+  detection of LFI, XSS, SQLi, and open redirects.
+
+category: recon
+tags:
+  - bug-bounty
+  - recon
+  - vulnerability
+  - web
+  - ctf
+
+inputs:
+  target:
+    type: string
+    required: true
+    description: Target domain or IP address to hunt
+
+  action:
+    type: string
+    required: false
+    default: full_pipeline
+    enum:
+      - full_pipeline
+      - subdomain_enum
+      - port_scan
+      - url_collect
+      - vuln_scan
+      - report
+
+  depth:
+    type: string
+    required: false
+    default: medium
+    enum: [quick, medium, deep]
+
+outputs:
+  status:
+    type: boolean
+  summary:
+    type: string
+  result:
+    type: object
+
+tools:
+  - subfinder
+  - dnsx
+  - naabu
+  - httpx
+  - katana
+  - nuclei
+  - gau
+  - sqlmap

@@ -1,0 +1,105 @@
+name: ctfd_setup
+description: |
+  Automated CTFd deployment and configuration orchestrator.
+  
+  This skill provides one-command deployment of a complete CTFd instance with:
+  - Docker Compose stack (CTFd + MariaDB + Redis)
+  - Automated admin account creation
+  - Plugin installation (CTFd-Whale for dynamic containers)
+  - Theme customization
+  - Challenge pack imports
+  - Event configuration (teams, scoring, deadlines, visibility)
+  - Health checks and validation
+  
+  Uses the existing Docker Compose configuration in configs/ctfd/ and orchestrates
+  the entire setup process through the CTFd API client.
+
+category: ctfd
+agent: true
+enabled: true
+
+inputs:
+  - deployment_mode      # "quick" (defaults) or "custom" (interactive)
+  - admin_username       # CTFd admin username (default: admin)
+  - admin_password       # CTFd admin password (default: admin - CHANGE IN PROD!)
+  - admin_email          # Admin email address (default: admin@ctfd.local)
+  - ctf_name             # CTF event name (default: "Purple Engine CTF")
+  - ctf_description      # CTF description (default: auto-generated)
+  - user_mode            # "users" or "teams" (default: teams)
+  - challenge_visibility # "public" or "private" (default: private)
+  - registration_visibility # "public", "private", "invite_only" (default: public)
+  - start_time           # Event start time (optional - ISO format)
+  - end_time             # Event end time (optional - ISO format)
+  - install_plugins      # List of plugins to install (default: ["CTFd-Whale"])
+  - theme                # Theme name (default: "core")
+  - challenge_packs      # List of challenge pack paths to import
+  - docker_compose_dir   # Path to docker-compose.yml (default: configs/ctfd)
+  - wait_timeout         # Seconds to wait for CTFd startup (default: 60)
+  - auto_backup          # Create backup after setup (default: true)
+
+tools:
+  - Docker & Docker Compose
+  - CTFd API Client (api_client.py)
+  - Shell commands (bash/powershell)
+  - Health check utilities
+
+outputs:
+  - ctfd_url             # Deployed CTFd instance URL
+  - admin_credentials    # Admin login details
+  - api_token            # Generated API token for Purple Engine
+  - challenges_imported  # Number of challenges imported
+  - setup_log            # Detailed setup process log
+  - backup_path          # Backup file location (if auto_backup=true)
+
+examples:
+  - description: Quick setup with defaults
+    input:
+      deployment_mode: "quick"
+    output:
+      ctfd_url: "http://localhost:8000"
+      admin_credentials:
+        username: "admin"
+        password: "admin"
+      challenges_imported: 0
+  
+  - description: Custom production setup
+    input:
+      deployment_mode: "custom"
+      admin_username: "ctf_admin"
+      admin_password: "SuperSecureP@ssw0rd!"
+      admin_email: "admin@example.com"
+      ctf_name: "CyberSec Championship 2026"
+      ctf_description: "Annual cybersecurity challenge event"
+      user_mode: "teams"
+      challenge_visibility: "private"
+      start_time: "2026-06-01T00:00:00Z"
+      end_time: "2026-06-07T23:59:59Z"
+      install_plugins: ["CTFd-Whale", "dynamic-challenges"]
+      challenge_packs: ["./challenge_packs/web_challenges.zip"]
+  
+  - description: Import existing challenge pack
+    input:
+      deployment_mode: "quick"
+      challenge_packs: 
+        - "./challenge_packs/crypto_101.zip"
+        - "./challenge_packs/pwn_basics.zip"
+
+metadata:
+  version: "1.0.0"
+  author: "Purple Engine Team"
+  requires:
+    - docker
+    - docker-compose
+    - ctfd_api_client
+  platform:
+    - linux
+    - macos
+    - windows (with Docker Desktop)
+  performance:
+    avg_setup_time: "2-5 minutes"
+    disk_space_required: "2-5 GB"
+  limitations:
+    - "Requires Docker and Docker Compose installed"
+    - "Port 8000 must be available"
+    - "Internet connection required for initial Docker image pull"
+    - "Windows users need Docker Desktop or WSL2"

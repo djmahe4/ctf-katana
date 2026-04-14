@@ -1,0 +1,46 @@
+name: "web"
+description: "Advanced Web Security & Synthesis Engine. Supports 20+ vulnerability categories and automated Dockerized environment synthesis (Nginx, Tomcat, Uvicorn)."
+version: "2.0.0"
+author: "Antigravity-C13"
+
+# Modular Handler Configuration
+handlers:
+  - name: "DiscoveryHandler"
+    path: "handlers/discovery_handler.py"
+    modes: ["discovery", "recon", "scan"]
+  - name: "InjectionHandler"
+    path: "handlers/injection_handler.py"
+    modes: ["injection", "sqli", "nosqli", "rce", "ssti"]
+  - name: "AuthHandler"
+    path: "handlers/auth_handler.py"
+    modes: ["auth", "jwt", "oauth", "session"]
+  - name: "XSSHandler"
+    path: "handlers/xss_handler.py"
+    modes: ["xss", "reflected", "stored", "dom"]
+  - name: "AccessHandler"
+    path: "handlers/access_handler.py"
+    modes: ["access", "idor", "privesc"]
+
+# LLM-Driven Designer Engine
+engines:
+  - name: "WebDesigner"
+    path: "engines/web_designer.py"
+    model: "groq/llama-3.3-70b-versatile"
+  - name: "WebSynthesisEngine"
+    path: "engines/synthesis_engine.py"
+
+# Actions Supported
+actions:
+  - "analyze"
+  - "fuzz"
+  - "exploit"
+  - "think"
+  - "mutate"
+  - "synthesize"
+
+# Requirements
+dependencies:
+  - "requests"
+  - "beautifulsoup4"
+  - "argparse"
+  - "pydantic"

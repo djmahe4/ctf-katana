@@ -1,0 +1,10 @@
+name: crypto_solver
+description: Solve classical ciphers and decode common encodings
+inputs:
+  - action
+  - text
+  - data_hex
+  - shift
+  - key
+tools: []
+category: crypto

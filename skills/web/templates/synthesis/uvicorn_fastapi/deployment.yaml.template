@@ -1,0 +1,45 @@
+# K8s Deployment for Vulnerable Uvicorn/FastAPI Challenge
+# Template for: {{ VULN_TYPE }}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ CHALLENGE_NAME }}-deployment
+  labels:
+    app: {{ CHALLENGE_NAME }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ CHALLENGE_NAME }}
+  template:
+    metadata:
+      labels:
+        app: {{ CHALLENGE_NAME }}
+    spec:
+      containers:
+      - name: {{ CHALLENGE_NAME }}
+        image: {{ CHALLENGE_NAME }}:latest # Assumes local image or registry access
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ CHALLENGE_NAME }}-service
+spec:
+  selector:
+    app: {{ CHALLENGE_NAME }}
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer # Typical for cloud deployments

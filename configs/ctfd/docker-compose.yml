@@ -1,0 +1,161 @@
+# Purple Engine - CTFd Deployment Stack
+# Complete CTFd setup with MariaDB, Redis, and auto-configuration
+# Based on CTFd v3.7.x official deployment guide
+
+version: '3.8'
+
+services:
+  # CTFd web application
+  ctfd:
+    image: ctfd/ctfd:latest
+    container_name: purple_ctfd
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Database configuration
+      DATABASE_URL: mysql+pymysql://ctfd:ctfd@db/ctfd
+      REDIS_URL: redis://cache:6379
+      
+      # CTFd configuration
+      SECRET_KEY: ${CTFD_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_PLEASE}
+      
+      # Upload settings
+      UPLOAD_FOLDER: /var/uploads
+      UPLOAD_PROVIDER: filesystem
+      
+      # Logging
+      LOG_FOLDER: /var/log/CTFd
+      
+      # Security
+      SESSION_COOKIE_HTTPONLY: "true"
+      SESSION_COOKIE_SAMESITE: "Lax"
+      PERMANENT_SESSION_LIFETIME: 604800
+      
+      # Workers
+      WORKERS: 4
+      
+      # CTFd mode (users or teams)
+      USER_MODE: teams
+      
+      # Challenge visibility
+      CHALLENGE_VISIBILITY: private
+      REGISTRATION_VISIBILITY: public
+      
+      # Scoring
+      SCORE_VISIBILITY: public
+      
+      # Mail settings (optional - configure for production)
+      # MAILFROM_ADDR: noreply@ctfd.local
+      # MAIL_SERVER: smtp.gmail.com
+      # MAIL_PORT: 587
+      # MAIL_USEAUTH: "true"
+      # MAIL_USERNAME: ${MAIL_USERNAME}
+      # MAIL_PASSWORD: ${MAIL_PASSWORD}
+      # MAIL_TLS: "true"
+      # MAIL_SSL: "false"
+      
+    volumes:
+      - ctfd_logs:/var/log/CTFd
+      - ctfd_uploads:/var/uploads
+      - ./ctfd_config:/opt/CTFd/CTFd/config:ro
+      - ./ctfd_plugins:/opt/CTFd/CTFd/plugins
+      - ./ctfd_themes:/opt/CTFd/CTFd/themes
+      - ./challenge_packs:/challenge_packs:ro
+    depends_on:
+      - db
+      - cache
+    networks:
+      - ctfd_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MariaDB database
+  db:
+    image: mariadb:10.11
+    container_name: purple_ctfd_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ctfd_root_password}
+      MYSQL_USER: ctfd
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ctfd}
+      MYSQL_DATABASE: ctfd
+    volumes:
+      - ctfd_mysql:/var/lib/mysql
+      - ./db_init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - ctfd_network
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --wait_timeout=28800
+      - --max-connections=200
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uctfd", "-pctfd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache
+  cache:
+    image: redis:7-alpine
+    container_name: purple_ctfd_cache
+    restart: unless-stopped
+    volumes:
+      - ctfd_redis:/data
+    networks:
+      - ctfd_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # CTFd-Whale (optional) - Dynamic container challenges
+  # Uncomment to enable docker-in-docker challenge hosting
+  # whale:
+  #   image: ctfd/ctfd-whale:latest
+  #   container_name: purple_ctfd_whale
+  #   restart: unless-stopped
+  #   environment:
+  #     DOCKER_HOST: unix:///var/run/docker.sock
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   networks:
+  #     - ctfd_network
+  #   depends_on:
+  #     - ctfd
+
+  # Nginx reverse proxy (optional) - For production deployment
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: purple_ctfd_nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - ctfd
+  #   networks:
+  #     - ctfd_network
+
+networks:
+  ctfd_network:
+    driver: bridge
+
+volumes:
+  ctfd_mysql:
+    name: purple_ctfd_mysql
+  ctfd_redis:
+    name: purple_ctfd_redis
+  ctfd_logs:
+    name: purple_ctfd_logs
+  ctfd_uploads:
+    name: purple_ctfd_uploads

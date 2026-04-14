@@ -1,0 +1,10 @@
+# Model configuration for CTF-Katana agents
+#
+# Override with environment variables:
+#   KATANA_OLLAMA_MODEL  – model name
+#   KATANA_OLLAMA_HOST   – Ollama server URL
+
+provider: ollama
+model: mistral
+host: "http://localhost:11434"
+temperature: 0.2

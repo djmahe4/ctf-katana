@@ -1,0 +1,8 @@
+name: writeup_generator
+description: Generate polished Markdown write-ups summarizing challenge solves
+inputs:
+  - execution_log
+  - challenge_name
+tools: []
+category: reporting
+agent: true

@@ -1,0 +1,62 @@
+name: kavach_shield
+version: "1.1.0"
+description: |
+  Kavach Security Shield & Protection-as-Code (PaC) Architect.
+  
+  Provides robust infrastructure hardening (Docker/K8s), 
+  AI agent containment (PhantomWorkspace), and multi-level tripwire monitoring.
+  
+author: Purple Engine Team
+license: MIT
+
+category: network-security
+tags:
+  - firewall
+  - kavach
+  - iptables
+  - security-audit
+  - containment
+
+entrypoint: run.py
+
+inputs:
+  mode:
+    type: string
+    required: false
+    default: audit
+    enum: [audit, containment, bypass_test, scaffold, shield]
+    description: Operation mode (Audit existing rules, Contain AI subagent, Test bypass techniques, or Scaffold protection)
+  
+  profile:
+    type: string
+    required: false
+    default: standard
+    enum: [strict, standard, permissive]
+    description: Kavach security profile for containment mode
+  
+  target_config:
+    type: string
+    required: false
+    description: Path to firewall configuration file (for audit mode)
+  
+  server_type:
+    type: string
+    required: false
+    enum: [nginx, tomcat, uvicorn]
+    description: Web server type for shielding (scaffold mode)
+    
+  output:
+    type: string
+    required: false
+    default: output/shielding
+    description: Output directory for generated protection layers
+
+outputs:
+  audit_report:
+    type: string
+  containment_status:
+    type: string
+  vulnerabilities:
+    type: array
+
+kavach_policy: standard

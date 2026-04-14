@@ -1,0 +1,91 @@
+name: research-rag
+version: "1.0.0"
+description: |
+  RAG (Retrieval-Augmented Generation) skill for Purple Engine.
+  
+  Searches the local knowledge base to find relevant security information,
+  vulnerability patterns, exploit techniques, and CTF challenge solutions.
+  
+  The knowledge base contains:
+  - Security research papers and blog posts
+  - GitHub repository documentation (Kavach, HyperAgents, claude-bug-bounty, etc.)
+  - YouTube AI Hacking series transcripts
+  - CVE databases and exploit databases
+  - CTF writeups and challenge solutions
+  - Security newsletters and updates
+
+author: Purple Engine Team
+license: MIT
+
+category: research
+tags:
+  - rag
+  - knowledge
+  - search
+  - research
+  - security
+
+inputs:
+  query:
+    type: string
+    required: true
+    description: Search query for the knowledge base
+  
+  limit:
+    type: integer
+    required: false
+    default: 5
+    description: Maximum number of results to return
+  
+  source_type:
+    type: string
+    required: false
+    enum: [github, youtube, paper, newsletter, cve, exploit, writeup, manual]
+    description: Filter results by source type
+  
+  tags:
+    type: array
+    required: false
+    description: Filter results by tags (e.g., ["web3", "reentrancy"])
+  
+  action:
+    type: string
+    required: false
+    default: search
+    enum: [search, add, ingest, ingest_youtube, stats, list_sources]
+    description: Action to perform
+
+outputs:
+  status:
+    type: string
+    description: success or error
+  
+  results:
+    type: array
+    description: Search results with relevance scores
+  
+  stats:
+    type: object
+    description: Knowledge base statistics (when action=stats)
+
+examples:
+  - description: Search for reentrancy vulnerabilities
+    input:
+      query: "reentrancy vulnerability smart contract"
+      source_type: github
+      limit: 3
+    
+  - description: Find CTF web challenge solutions
+    input:
+      query: "SQL injection bypass WAF"
+      tags: ["web", "sqli"]
+      
+  - description: Get knowledge base statistics
+    input:
+      action: stats
+
+dependencies:
+  - requests
+  - numpy (optional)
+  
+kavach_policy: standard

@@ -1,0 +1,51 @@
+name: research-swarm
+version: "1.0.0"
+description: |
+  Multi-agent swarm orchestration for parallel research.
+  
+  Inspired by HyperAgents pattern - deploys multiple specialized
+  agents in parallel for faster, more comprehensive research.
+
+author: Purple Engine Team
+license: MIT
+
+category: research
+tags:
+  - swarm
+  - multi-agent
+  - parallel
+  - research
+
+inputs:
+  topic:
+    type: string
+    required: true
+    description: Research topic for swarm
+  
+  swarm_type:
+    type: string
+    required: false
+    default: balanced
+    enum: [recon, analysis, exploit, balanced, full]
+  
+  max_agents:
+    type: integer
+    required: false
+    default: 5
+  
+  timeout:
+    type: integer
+    required: false
+    default: 300
+
+outputs:
+  status:
+    type: string
+  agents_deployed:
+    type: integer
+  results:
+    type: array
+  synthesis:
+    type: string
+
+kavach_policy: standard

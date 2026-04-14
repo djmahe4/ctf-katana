@@ -1,0 +1,15 @@
+# Nginx Security Headers
+# Filename: security_headers.conf
+
+add_header X-Frame-Options "SAMEORIGIN";
+add_header X-XSS-Protection "1; mode=block";
+add_header X-Content-Type-Options "nosniff";
+add_header Referrer-Policy "no-referrer-when-downgrade";
+add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'; frame-ancestors 'self';";
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# Rate Limiting Zones
+# Filename: rate_limit.conf
+
+limit_req_zone $binary_remote_addr zone=one:10m rate=1r/s;
+limit_req zone=one burst=5 nodelay;

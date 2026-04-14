@@ -1,0 +1,13 @@
+name: stego_solver
+description: Detect and extract hidden data from images, audio, and other media
+inputs:
+  - path
+  - action
+  - passphrase
+tools:
+  - strings
+  - exiftool
+  - binwalk
+  - steghide
+  - zsteg
+category: stego

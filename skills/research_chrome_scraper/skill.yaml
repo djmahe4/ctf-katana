@@ -1,0 +1,48 @@
+name: chrome-scraper
+version: "1.0.0"
+description: |
+  Autonomous Chrome-based Intelligence Scraper for vulnerability research.
+  
+  Missions include:
+  - Monitoring CVE deltas and GitHub Advisories.
+  - Parsing Nuclei templates for ground-truth verification.
+  - Cross-referencing threat intelligence sources.
+
+author: Purple Engine Team
+license: MIT
+
+category: research
+tags:
+  - intelligence
+  - scraping
+  - cve
+  - nuclei
+  - security
+
+inputs:
+  source:
+    type: string
+    required: false
+    default: all
+    enum: [cve, nuclei, github, nvd, all]
+  
+  query:
+    type: string
+    required: false
+    description: Specific keyword or CVE ID to search for
+  
+  depth:
+    type: string
+    required: false
+    default: light
+    enum: [light, deep]
+
+outputs:
+  status:
+    type: string
+  items:
+    type: array
+  summary:
+    type: string
+
+kavach_policy: search
