@@ -9,8 +9,8 @@ The `raum-dev-debugger` skill ensures the stability of the **ctf-katana** multi-
 
 ## Context Anchors
 
-- **Transport Architecture**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
-- **Engine Blueprint**: [Crab Engine (Rust Host)](docs/MIGRATION_GUIDE.md#🦀-level-2-the-crab-engine-rust-host)
+- **Transport Architecture**: [MIGRATION_GUIDE.md](../docs/MIGRATION_GUIDE.md)
+- **Engine Blueprint**: [Crab Engine (Rust Host)](../docs/MIGRATION_GUIDE.md#🦀-level-2-the-crab-engine-rust-host)
 
 ## Debugging Workflow
 
