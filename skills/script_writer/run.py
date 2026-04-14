@@ -3,7 +3,7 @@
 This skill consumes outputs from execution skills (``bug_hunting``, ``recon``,
 ``web``) and dynamically authors:
 
-* Custom Python exploit/helper scripts  → ``skills/custom/``
+* Custom Python exploit/helper scripts  → ``scripts/custom/``
 * Professional vulnerability reports    → ``outputs/reports/``
 * SQLmap tamper scripts                 → configurable directory
 * OOB/SSRF async polling helpers
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # Default output roots
 _DEFAULT_REPORTS_DIR = str(Path(_project_root) / "outputs" / "reports")
-_DEFAULT_SCRIPTS_DIR = str(Path(_project_root) / "skills" / "custom")
+_DEFAULT_SCRIPTS_DIR = str(Path(_project_root) / "scripts" / "custom")
 
 
 # ---------------------------------------------------------------------------
