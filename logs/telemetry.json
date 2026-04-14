@@ -128,5 +128,31 @@
     "metadata": {
       "reason": "skill_not_found"
     }
+  },
+  {
+    "name": "crypto_solver",
+    "category": "skill_execution",
+    "timestamp": "2026-04-14T12:47:39.144462",
+    "duration_sec": 0.0003,
+    "status": "success",
+    "cpu_at_start": 27.8,
+    "memory_at_start_mb": 230.82,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 230.82,
+    "metadata": {}
+  },
+  {
+    "name": "nonexistent_skill",
+    "category": "skill_execution",
+    "timestamp": "2026-04-14T12:47:39.146005",
+    "duration_sec": 0.0002,
+    "status": "error",
+    "cpu_at_start": 0.0,
+    "memory_at_start_mb": 230.82,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 230.82,
+    "metadata": {
+      "reason": "skill_not_found"
+    }
   }
 ]
