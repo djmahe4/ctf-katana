@@ -20,8 +20,8 @@ class TestRegistry:
             "kavach_shield", "kavach_wrapper", "merger",
             "purple-loop-orchestrator", "recon", "research-agent",
             "research-rag", "research-swarm", "research-youtube-ocr",
-            "reverse", "reverse_engineering", "stego_solver", "superpowers",
-            "vuln-discovery", "web", "web3-analyzer",
+            "reverse", "reverse_engineering", "script_writer", "stego_solver",
+            "superpowers", "vuln-discovery", "web", "web3-analyzer",
             "web_exploit (DEPRECATED)", "windows-exploitation",
             "writeup_generator"
         }

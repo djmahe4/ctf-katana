@@ -1,0 +1,84 @@
+name: script_writer
+description: |
+  Script Writer – the analytical and generative core of the Purple Engine.
+
+  Consumes outputs from other skills (bug_hunting recon logs, nuclei.txt,
+  alive.txt, xray HTML) and dynamically authors:
+  - Custom Python exploit/helper scripts saved to skills/custom/
+  - Professional vulnerability reports (Markdown + JSON) saved to outputs/reports/
+  - SQLmap tamper scripts with WAF-bypass logic
+  - Out-of-Band (OOB/SSRF) async polling helpers
+  - JavaScript endpoint analysis utilities
+
+  Implements the Purple Engine 6-step loop:
+  Analyze → Search KB → Plan → Execute → Interpret → Report
+
+category: reporting
+tags:
+  - script-generation
+  - reporting
+  - exploit
+  - rag
+  - purple-engine
+
+inputs:
+  action:
+    type: string
+    required: false
+    default: generate_report
+    enum:
+      - generate_report
+      - parse_recon
+      - write_tamper
+      - analyze_js
+      - validate_oob
+      - full_pipeline
+
+  workspace:
+    type: string
+    required: false
+    description: Path to the directory containing tool output files
+
+  findings:
+    type: object
+    required: false
+    description: Pre-parsed findings dict (overrides workspace file parsing)
+
+  target:
+    type: string
+    required: false
+    description: Base target URL/domain for JS analysis and OOB validation
+
+  raw_logs:
+    type: string
+    required: false
+    description: Raw stdout/log text to parse for vulnerability signatures
+
+  tamper_name:
+    type: string
+    required: false
+    description: Name for the generated SQLmap tamper script
+
+  tamper_logic:
+    type: string
+    required: false
+    description: Python expression applied to the sqlmap payload variable
+
+  tamper_description:
+    type: string
+    required: false
+    description: Human-readable description of what the tamper does
+
+outputs:
+  status:
+    type: boolean
+  summary:
+    type: string
+  result:
+    type: object
+
+tools:
+  - nuclei
+  - sqlmap
+  - playwright
+  - drissionpage
