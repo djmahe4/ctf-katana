@@ -35,6 +35,15 @@ try:
 except ImportError:
     KnowledgeBase = None  # type: ignore[assignment,misc]
 
+try:
+    from skills.bug_hunting.platform_scanner import (  # noqa: E402
+        PlatformScanner,
+        run_platform_scan,
+    )
+    _PLATFORM_SCANNER_AVAILABLE = True
+except ImportError:
+    _PLATFORM_SCANNER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -680,6 +689,18 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 "result": {"findings": [asdict(f) for f in findings]},
             }
 
+        if action == "platform_scan":
+            if not _PLATFORM_SCANNER_AVAILABLE:
+                return {
+                    "status": False,
+                    "summary": (
+                        "Platform scanner unavailable: install DrissionPage, "
+                        "playwright, and beautifulsoup4."
+                    ),
+                    "result": {},
+                }
+            return run_platform_scan(params)
+
         return {
             "status": False,
             "summary": f"Unknown action '{action}'.",
@@ -691,6 +712,7 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                     "url_collect",
                     "vuln_scan",
                     "report",
+                    "platform_scan",
                 ]
             },
         }
@@ -725,6 +747,7 @@ def main() -> None:
             "url_collect",
             "vuln_scan",
             "report",
+            "platform_scan",
         ],
         default="full_pipeline",
     )

@@ -32,6 +32,7 @@ inputs:
       - url_collect
       - vuln_scan
       - report
+      - platform_scan
 
   depth:
     type: string
