@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.23.0",      # >=1.23.0: fixes DNS-rebinding + DoS vulnerabilities
+    "httpx>=0.25.0",    # HTTP client used by agentic_dispatcher and fuzzing web_handler
     "ollama>=0.4.0",
     "pyyaml>=6.0",
     # Purple Engine - Phase 1: CTFd Integration

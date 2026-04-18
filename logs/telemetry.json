@@ -154,5 +154,83 @@
     "metadata": {
       "reason": "skill_not_found"
     }
+  },
+  {
+    "name": "crypto_solver",
+    "category": "skill_execution",
+    "timestamp": "2026-04-18T07:10:33.371937",
+    "duration_sec": 0.0002,
+    "status": "success",
+    "cpu_at_start": 22.7,
+    "memory_at_start_mb": 162.72,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 162.72,
+    "metadata": {}
+  },
+  {
+    "name": "nonexistent_skill",
+    "category": "skill_execution",
+    "timestamp": "2026-04-18T07:10:33.373326",
+    "duration_sec": 0.0001,
+    "status": "error",
+    "cpu_at_start": 0.0,
+    "memory_at_start_mb": 162.72,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 162.72,
+    "metadata": {
+      "reason": "skill_not_found"
+    }
+  },
+  {
+    "name": "crypto_solver",
+    "category": "skill_execution",
+    "timestamp": "2026-04-18T07:11:20.010237",
+    "duration_sec": 0.0002,
+    "status": "success",
+    "cpu_at_start": 23.8,
+    "memory_at_start_mb": 232.7,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 232.7,
+    "metadata": {}
+  },
+  {
+    "name": "nonexistent_skill",
+    "category": "skill_execution",
+    "timestamp": "2026-04-18T07:11:20.011670",
+    "duration_sec": 0.0001,
+    "status": "error",
+    "cpu_at_start": 0.0,
+    "memory_at_start_mb": 232.72,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 232.72,
+    "metadata": {
+      "reason": "skill_not_found"
+    }
+  },
+  {
+    "name": "crypto_solver",
+    "category": "skill_execution",
+    "timestamp": "2026-04-18T07:11:58.162998",
+    "duration_sec": 0.0002,
+    "status": "success",
+    "cpu_at_start": 25.8,
+    "memory_at_start_mb": 229.52,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 229.52,
+    "metadata": {}
+  },
+  {
+    "name": "nonexistent_skill",
+    "category": "skill_execution",
+    "timestamp": "2026-04-18T07:11:58.164441",
+    "duration_sec": 0.0001,
+    "status": "error",
+    "cpu_at_start": 0.0,
+    "memory_at_start_mb": 229.52,
+    "cpu_at_end": 0.0,
+    "memory_at_end_mb": 229.52,
+    "metadata": {
+      "reason": "skill_not_found"
+    }
   }
 ]

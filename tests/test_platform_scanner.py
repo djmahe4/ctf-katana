@@ -20,6 +20,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
+from urllib.parse import urlparse
 
 import pytest
 
@@ -925,7 +926,7 @@ class TestRealScenario:
         )
         assert len(programs) >= 1, "Expected at least 1 program from HackerOne"
         urls = [p.url for p in programs]
-        assert any("hackerone.com" in u for u in urls), \
+        assert any(urlparse(u).netloc == "hackerone.com" for u in urls), \
             "Expected at least one hackerone.com URL"
 
     def test_hackerone_entries_have_name_and_url(self):
