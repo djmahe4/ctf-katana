@@ -69,9 +69,17 @@ PLATFORM_CONFIG: Dict[str, Dict[str, Any]] = {
         "scrolls": 6,
     },
     "bugcrowd": {
-        "url": "https://bugcrowd.com/programs",
+        # /programs and /engagements are a login-gated React SPA whose
+        # JS bundle loads cross-origin and may not hydrate in restricted
+        # environments.  The same data the React app consumes is available
+        # publicly (no auth, no token) via the JSON endpoint below.
+        # fetch_all() routes Bugcrowd through fetch_bugcrowd_json() instead
+        # of the HTML browser path.
+        "url": "https://bugcrowd.com/engagements?category=bug_bounty&page=1&sort_by=promoted&sort_direction=desc",
         "base": "https://bugcrowd.com",
         "scrolls": 5,
+        "json_endpoint": "https://bugcrowd.com/engagements.json",
+        "json_pages": 5,  # 24 results/page → up to 120 programs
     },
     "intigriti": {
         "url": "https://www.intigriti.com/researchers/bug-bounty-programs",
@@ -339,12 +347,10 @@ def parse_programs(html: str, base: str, platform: str = "") -> List[ProgramEntr
         logger.debug("[parse_programs] empty HTML for platform=%s", platform)
         return []
 
-    try:
-        from bs4 import BeautifulSoup  # type: ignore[import]
-    except ImportError as exc:
+    if BeautifulSoup is None:
         raise ImportError(
             "BeautifulSoup4 is not installed. Run: pip install beautifulsoup4"
-        ) from exc
+        )
 
     soup = BeautifulSoup(html, "html.parser")
     programs: List[ProgramEntry] = []
@@ -496,6 +502,168 @@ def score_program(entry: ProgramEntry) -> ProgramEntry:
 # ---------------------------------------------------------------------------
 
 
+def fetch_bugcrowd_json(
+    base: str = "https://bugcrowd.com",
+    json_endpoint: str = "https://bugcrowd.com/engagements.json",
+    max_pages: int = 5,
+) -> List[ProgramEntry]:
+    """Fetch Bugcrowd programs via its public JSON endpoint using Playwright.
+
+    Purpose
+    -------
+    Bugcrowd's /engagements listing page is a React SPA whose JS bundle loads
+    from ``assets.bugcrowdusercontent.com``.  In environments where that CDN
+    is unreachable the React tree never hydrates, leaving 0 program links in
+    the DOM.  However, the *same data* the React app fetches is served by a
+    public, authentication-free JSON endpoint:
+        GET /engagements.json?category=bug_bounty&page=N&sort_by=promoted
+
+    This function uses Playwright's ``APIRequestContext`` (still browser-driven
+    — it shares the browser's network stack, cookies, and TLS settings) to
+    paginate that endpoint and convert each ``engagement`` object into a
+    ``ProgramEntry``.  No API key or authentication token is required.
+
+    Fields used from each engagement object
+    ----------------------------------------
+    * ``name``       – human-readable program name
+    * ``briefUrl``   – relative path (e.g. ``/engagements/openai-safety``)
+    * ``tagline``    – short description; used as ``raw_text`` for scoring
+    * ``scopeRank``  – Bugcrowd scope quality score (0–4); fed into ``raw_text``
+    * ``industryName`` – industry tag; contributes to IoT/Web3 scoring
+    * ``isPrivate``  – private programs are kept but tagged accordingly
+    * ``accessStatus`` – "open" / "invite_only"
+
+    Failure modes handled
+    ----------------------
+    * Playwright not installed        → raises ``ImportError``
+    * Non-200 response on a page      → pagination stops, previously found kept
+    * Malformed JSON                  → page skipped, others continue
+    * Zero results on first page      → returns empty list immediately
+    * Network error mid-pagination    → partial results returned
+
+    MCP refinement hint
+    -------------------
+    Add ``sort_by=scope`` or ``sort_by=rewards`` as additional passes to
+    surface high-value programs that rank lower on the "promoted" sort.
+    """
+    if sync_playwright is None:
+        raise ImportError(
+            "Playwright is not installed. Run: pip install playwright && "
+            "python -m playwright install chromium"
+        )
+
+    programs: List[ProgramEntry] = []
+    seen_urls: set = set()
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            ctx = browser.new_context(ignore_https_errors=True)
+            try:
+                for page_num in range(1, max_pages + 1):
+                    url = (
+                        f"{json_endpoint}?category=bug_bounty"
+                        f"&page={page_num}"
+                        f"&sort_by=promoted&sort_direction=desc"
+                    )
+                    try:
+                        resp = ctx.request.get(
+                            url,
+                            headers={
+                                "Accept": "application/json",
+                                "X-Requested-With": "XMLHttpRequest",
+                            },
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "[fetch_bugcrowd_json] request error page=%d: %s",
+                            page_num, exc,
+                        )
+                        break
+
+                    if resp.status != 200:
+                        logger.warning(
+                            "[fetch_bugcrowd_json] non-200 status=%d page=%d",
+                            resp.status, page_num,
+                        )
+                        break
+
+                    try:
+                        data = resp.json()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "[fetch_bugcrowd_json] JSON decode error page=%d: %s",
+                            page_num, exc,
+                        )
+                        break
+
+                    engagements = data.get("engagements", [])
+                    if not engagements:
+                        # Reached end of paginated results
+                        logger.debug(
+                            "[fetch_bugcrowd_json] empty page=%d, stopping", page_num
+                        )
+                        break
+
+                    for eng in engagements:
+                        brief_url = eng.get("briefUrl", "")
+                        if not brief_url:
+                            continue
+
+                        # Resolve to absolute URL
+                        if brief_url.startswith("/"):
+                            full_url = base.rstrip("/") + brief_url
+                        else:
+                            full_url = brief_url
+
+                        if full_url in seen_urls:
+                            continue
+                        seen_urls.add(full_url)
+
+                        # Build a rich raw_text string for the scoring engine to
+                        # search for Web3/IoT/new-program keywords.
+                        raw_text = " ".join(filter(None, [
+                            eng.get("name", ""),
+                            eng.get("tagline", ""),
+                            eng.get("industryName", ""),
+                            "scope" + str(eng.get("scopeRank", "")),
+                            "private" if eng.get("isPrivate") else "",
+                        ]))
+
+                        programs.append(
+                            ProgramEntry(
+                                name=eng.get("name", ""),
+                                url=full_url,
+                                platform="bugcrowd",
+                                raw_text=raw_text,
+                            )
+                        )
+
+                        if len(programs) >= _MAX_PROGRAMS_PER_PLATFORM:
+                            logger.debug(
+                                "[fetch_bugcrowd_json] hit %d-program cap",
+                                _MAX_PROGRAMS_PER_PLATFORM,
+                            )
+                            return programs
+
+                    logger.info(
+                        "[fetch_bugcrowd_json] page=%d fetched=%d total=%d",
+                        page_num, len(engagements), len(programs),
+                    )
+            finally:
+                ctx.close()
+                browser.close()
+
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[fetch_bugcrowd_json] fatal error: %s", exc)
+
+    return programs
+
+
+
 def fetch_all(platforms: Optional[Dict[str, Dict[str, Any]]] = None) -> List[ProgramEntry]:
     """Iterate all platforms, fetch HTML, parse, score, and return sorted results.
 
@@ -526,6 +694,30 @@ def fetch_all(platforms: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Pro
         scrolls = config.get("scrolls", 5)
 
         logger.info("[fetch_all] scanning platform=%s url=%s", key, url)
+
+        # --- Bugcrowd: use JSON endpoint instead of HTML browser path --------
+        # The /engagements page is a React SPA; its JS bundle loads from an
+        # external CDN that may be unreachable.  The public JSON endpoint
+        # returns the same data without requiring authentication.
+        if config.get("json_endpoint"):
+            try:
+                programs = fetch_bugcrowd_json(
+                    base=base,
+                    json_endpoint=config["json_endpoint"],
+                    max_pages=config.get("json_pages", 5),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[fetch_all] JSON fetch error for %s: %s", key, exc)
+                programs = []
+
+            for p in programs:
+                if p.url not in seen_urls:
+                    seen_urls.add(p.url)
+                    all_programs.append(score_program(p))
+
+            logger.info("[fetch_all] platform=%s (json) programs=%d", key, len(programs))
+            continue
+        # --- All other platforms: HTML browser path --------------------------
 
         try:
             html = fetch_page(url, scrolls)
@@ -769,28 +961,34 @@ def run_platform_scan(params: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _EDGE_CASE_TABLE = """
-Edge case                         | Handler location              | Strategy
-----------------------------------|-------------------------------|------------------------------------
-JS not loaded in time             | fetch_dynamic_html            | time.sleep(6 + jitter) after page.get
-Infinite scroll not triggered     | fetch_dynamic_html            | repeated page.scroll.to_bottom()
-Empty HTML returned               | fetch_page / fetch_all        | len(html) < _MIN_HTML_BYTES check
-HTML too small (CAPTCHA page)     | fetch_page                    | falls through to Playwright fallback
-Browser crash (DrissionPage)      | fetch_dynamic_html finally    | page.quit() in finally; exception caught
-Browser crash (Playwright)        | fetch_fallback try/except     | browser.close() in finally
-Playwright not installed          | fetch_fallback                | ImportError raised, caught in fetch_page
-DrissionPage not installed        | fetch_dynamic_html            | ImportError raised, caught in fetch_page
-Both engines unavailable          | fetch_page                    | returns "" with warning; caller skips
-Network timeout                   | fetch_fallback                | page.goto timeout=120_000 ms
-Duplicate links (same platform)   | parse_programs                | seen set deduplication
-Duplicate links (cross-platform)  | fetch_all                     | seen_urls set deduplication
-Relative href without base        | parse_programs                | urljoin(base + "/", href)
-Anchor / JS href                  | parse_programs                | startswith("#","javascript:") skip
-Empty name / href                 | parse_programs                | None/blank check
-Partial DOM                       | parse_programs                | cascade selectors; partial match ok
-Layout / selector change          | _PROGRAM_SELECTORS list       | cascade of 10 selectors; graceful skip
-Single platform fetch failure     | fetch_all try/except          | continue to next platform
-All platforms fail                | fetch_all                     | returns empty list
-Criteria filter removes all       | _apply_criteria               | returns empty list; status still True
-Unknown platform in criteria      | PlatformScanner.run           | returns status=False with valid list
-Memory leak (browser session)     | fetch_dynamic_html / fallback | quit/close in finally blocks
+Edge case                               | Handler location              | Strategy
+----------------------------------------|-------------------------------|------------------------------------
+JS not loaded in time                   | fetch_dynamic_html            | time.sleep(6 + jitter) after page.get
+Infinite scroll not triggered           | fetch_dynamic_html            | repeated page.scroll.to_bottom()
+Empty HTML returned                     | fetch_page / fetch_all        | len(html) < _MIN_HTML_BYTES check
+HTML too small (CAPTCHA page)           | fetch_page                    | falls through to Playwright fallback
+Browser crash (DrissionPage)            | fetch_dynamic_html finally    | page.quit() in finally; exception caught
+Browser crash (Playwright)              | fetch_fallback try/except     | ctx/browser.close() in finally
+Playwright not installed                | fetch_fallback                | ImportError raised, caught in fetch_page
+DrissionPage not installed              | fetch_dynamic_html            | ImportError raised, caught in fetch_page
+BeautifulSoup not installed             | parse_programs                | ImportError raised at call time
+Both engines unavailable                | fetch_page                    | returns "" with warning; caller skips
+Network timeout                         | fetch_fallback                | page.goto timeout=120_000 ms
+SSL/TLS cert interception by proxy      | fetch_fallback                | ignore_https_errors=True on context
+Duplicate links (same platform)         | parse_programs                | seen set deduplication
+Duplicate links (cross-platform)        | fetch_all                     | seen_urls set deduplication
+Relative href without base              | parse_programs                | urljoin(base + "/", href)
+Anchor / JS href                        | parse_programs                | startswith("#","javascript:") skip
+Empty name / href                       | parse_programs                | None/blank check
+Partial DOM                             | parse_programs                | cascade selectors; partial match ok
+Layout / selector change                | _PROGRAM_SELECTORS list       | cascade of 10 selectors; graceful skip
+Single platform fetch failure           | fetch_all try/except          | continue to next platform
+All platforms fail                      | fetch_all                     | returns empty list
+Criteria filter removes all             | _apply_criteria               | returns empty list; status still True
+Unknown platform in criteria            | PlatformScanner.run           | returns status=False with valid list
+Memory leak (browser session)           | fetch_dynamic_html / fallback | quit/close in finally blocks
+Bugcrowd JS bundle unreachable          | fetch_bugcrowd_json           | bypasses React hydration via JSON endpoint
+Bugcrowd non-200 JSON response          | fetch_bugcrowd_json           | pagination stops; partial results returned
+Bugcrowd malformed JSON                 | fetch_bugcrowd_json           | page skipped; continues to next page
+Bugcrowd JSON pagination end            | fetch_bugcrowd_json           | stops when engagements list is empty
 """

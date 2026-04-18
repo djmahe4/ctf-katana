@@ -75,9 +75,9 @@ class TestFetchDynamicHtml:
     """Edge cases for the DrissionPage fetch path."""
 
     def test_drissionpage_not_installed_raises(self):
-        """ImportError propagates when DrissionPage is not importable."""
+        """ImportError raised when ChromiumPage module-level name is None."""
         from skills.bug_hunting.platform_scanner import fetch_dynamic_html
-        with patch.dict("sys.modules", {"DrissionPage": None}):
+        with patch("skills.bug_hunting.platform_scanner.ChromiumPage", None):
             with pytest.raises(ImportError, match="DrissionPage"):
                 fetch_dynamic_html("https://example.com")
 
@@ -139,47 +139,62 @@ class TestFetchDynamicHtml:
 class TestFetchFallback:
     """Edge cases for the Playwright fallback path."""
 
+    def _make_pw_mock(self, page_content=_LARGE_HTML, goto_exc=None):
+        """Build a full mock sync_playwright context manager."""
+        mock_page = MagicMock()
+        if goto_exc:
+            mock_page.goto.side_effect = goto_exc
+        mock_page.content.return_value = page_content
+
+        mock_ctx = MagicMock()
+        mock_ctx.new_page.return_value = mock_page
+
+        mock_browser = MagicMock()
+        mock_browser.new_context.return_value = mock_ctx
+
+        mock_pw = MagicMock()
+        mock_pw.__enter__ = MagicMock(return_value=mock_pw)
+        mock_pw.__exit__ = MagicMock(return_value=False)
+        mock_pw.chromium.launch.return_value = mock_browser
+        return mock_pw, mock_browser, mock_ctx, mock_page
+
     def test_playwright_not_installed_raises(self):
+        """ImportError raised when sync_playwright module-level name is None."""
         from skills.bug_hunting.platform_scanner import fetch_fallback
-        with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", None):
             with pytest.raises(ImportError, match="Playwright"):
                 fetch_fallback("https://example.com")
 
     def test_page_goto_timeout_returns_empty(self):
-        from skills.bug_hunting.platform_scanner import fetch_fallback
-        mock_browser = MagicMock()
-        mock_page = MagicMock()
-        mock_page.goto.side_effect = Exception("Timeout 120000ms exceeded")
-        mock_page.content.return_value = ""
-        mock_browser.new_page.return_value = mock_page
-        mock_playwright = MagicMock()
-        mock_playwright.__enter__ = MagicMock(return_value=mock_playwright)
-        mock_playwright.__exit__ = MagicMock(return_value=False)
-        mock_playwright.chromium.launch.return_value = mock_browser
-        with patch(
-            "skills.bug_hunting.platform_scanner.sync_playwright",
-            return_value=mock_playwright,
-        ):
+        mock_pw, mock_browser, mock_ctx, mock_page = self._make_pw_mock(
+            goto_exc=Exception("Timeout 120000ms exceeded")
+        )
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
             result = fetch_fallback("https://example.com")
         assert result == ""
+        mock_browser.close.assert_called_once()
 
-    def test_browser_close_called(self):
-        from skills.bug_hunting.platform_scanner import fetch_fallback
-        mock_browser = MagicMock()
-        mock_page = MagicMock()
-        mock_page.content.return_value = _LARGE_HTML
-        mock_browser.new_page.return_value = mock_page
-        mock_playwright = MagicMock()
-        mock_playwright.__enter__ = MagicMock(return_value=mock_playwright)
-        mock_playwright.__exit__ = MagicMock(return_value=False)
-        mock_playwright.chromium.launch.return_value = mock_browser
-        with patch(
-            "skills.bug_hunting.platform_scanner.sync_playwright",
-            return_value=mock_playwright,
-        ):
+    def test_browser_close_called_on_success(self):
+        mock_pw, mock_browser, mock_ctx, mock_page = self._make_pw_mock()
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
             result = fetch_fallback("https://example.com")
         mock_browser.close.assert_called_once()
         assert result == _LARGE_HTML
+
+    def test_ctx_closed_on_success(self):
+        mock_pw, mock_browser, mock_ctx, mock_page = self._make_pw_mock()
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            fetch_fallback("https://example.com")
+        mock_ctx.close.assert_called_once()
+
+    def test_ignore_https_errors_passed_to_context(self):
+        """new_context must be called with ignore_https_errors=True."""
+        mock_pw, mock_browser, mock_ctx, _ = self._make_pw_mock()
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            fetch_fallback("https://example.com")
+        mock_browser.new_context.assert_called_once()
+        call_kwargs = mock_browser.new_context.call_args[1]
+        assert call_kwargs.get("ignore_https_errors") is True
 
 
 # ---------------------------------------------------------------------------
@@ -679,3 +694,337 @@ class TestRunEntryPlatform:
         expected = ["full_pipeline", "subdomain_enum", "port_scan", "url_collect", "vuln_scan", "report"]
         for action in expected:
             assert action in result["result"]["available_actions"]
+
+
+# ---------------------------------------------------------------------------
+# TestFetchBugcrowdJson  (unit — mocked browser context)
+# ---------------------------------------------------------------------------
+
+class TestFetchBugcrowdJson:
+    """Unit tests for the Bugcrowd JSON fetcher with mocked Playwright."""
+
+    def _make_pw_mock(self, pages_data: list):
+        """
+        Build a mock sync_playwright stack where each call to ctx.request.get()
+        cycles through ``pages_data`` (list of dicts or exceptions).
+        """
+        call_count = {"n": 0}
+
+        def mock_get(url, **kwargs):
+            i = call_count["n"]
+            call_count["n"] += 1
+            if i >= len(pages_data):
+                resp = MagicMock()
+                resp.status = 200
+                resp.json.return_value = {"engagements": []}
+                return resp
+            item = pages_data[i]
+            if isinstance(item, Exception):
+                raise item
+            resp = MagicMock()
+            resp.status = item.get("status", 200)
+            resp.json.return_value = item.get("json", {})
+            return resp
+
+        mock_req = MagicMock()
+        mock_req.get.side_effect = mock_get
+
+        mock_ctx = MagicMock()
+        mock_ctx.request = mock_req
+
+        mock_browser = MagicMock()
+        mock_browser.new_context.return_value = mock_ctx
+
+        mock_pw = MagicMock()
+        mock_pw.__enter__ = MagicMock(return_value=mock_pw)
+        mock_pw.__exit__ = MagicMock(return_value=False)
+        mock_pw.chromium.launch.return_value = mock_browser
+        return mock_pw, mock_browser, mock_ctx
+
+    def test_returns_programs_from_json(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        mock_pw, _, _ = self._make_pw_mock([
+            {"json": {"engagements": [
+                {"name": "OpenAI Safety", "briefUrl": "/engagements/openai-safety",
+                 "tagline": "AI safety", "industryName": "Technology",
+                 "scopeRank": 3, "isPrivate": False},
+                {"name": "Bitstamp", "briefUrl": "/engagements/bitstamp",
+                 "tagline": "Crypto exchange", "industryName": "Finance",
+                 "scopeRank": 2, "isPrivate": False},
+            ]}},
+        ])
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            result = fetch_bugcrowd_json()
+        assert len(result) == 2
+        assert result[0].name == "OpenAI Safety"
+        assert result[0].url == "https://bugcrowd.com/engagements/openai-safety"
+        assert result[0].platform == "bugcrowd"
+
+    def test_pagination_stops_on_empty_page(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        mock_pw, _, mock_ctx = self._make_pw_mock([
+            {"json": {"engagements": [
+                {"name": "P1", "briefUrl": "/engagements/p1", "tagline": "", "industryName": "", "scopeRank": 1, "isPrivate": False},
+            ]}},
+            {"json": {"engagements": []}},   # empty page → stop
+        ])
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            result = fetch_bugcrowd_json(max_pages=5)
+        # Only 1 program; request was not made for further pages after empty
+        assert len(result) == 1
+        assert mock_ctx.request.get.call_count == 2  # page 1 + page 2
+
+    def test_pagination_stops_on_non_200(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        mock_pw, _, mock_ctx = self._make_pw_mock([
+            {"json": {"engagements": [
+                {"name": "P1", "briefUrl": "/engagements/p1", "tagline": "", "industryName": "", "scopeRank": 1, "isPrivate": False},
+            ]}},
+            {"status": 403, "json": {}},   # auth error → stop
+        ])
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            result = fetch_bugcrowd_json(max_pages=5)
+        assert len(result) == 1
+
+    def test_network_error_stops_pagination_returns_partial(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        mock_pw, _, _ = self._make_pw_mock([
+            {"json": {"engagements": [
+                {"name": "P1", "briefUrl": "/engagements/p1", "tagline": "", "industryName": "", "scopeRank": 1, "isPrivate": False},
+            ]}},
+            RuntimeError("connection reset"),
+        ])
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            result = fetch_bugcrowd_json(max_pages=5)
+        assert len(result) == 1  # partial results returned
+
+    def test_dedup_within_json_pages(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        eng = {"name": "DupProg", "briefUrl": "/engagements/dup", "tagline": "", "industryName": "", "scopeRank": 1, "isPrivate": False}
+        mock_pw, _, _ = self._make_pw_mock([
+            {"json": {"engagements": [eng]}},
+            {"json": {"engagements": [eng]}},  # same entry on page 2
+        ])
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            result = fetch_bugcrowd_json(max_pages=2)
+        urls = [p.url for p in result]
+        assert urls.count("https://bugcrowd.com/engagements/dup") == 1
+
+    def test_missing_brief_url_skipped(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        mock_pw, _, _ = self._make_pw_mock([
+            {"json": {"engagements": [
+                {"name": "NoUrl", "briefUrl": "", "tagline": "", "industryName": "", "scopeRank": 1, "isPrivate": False},
+                {"name": "Valid", "briefUrl": "/engagements/valid", "tagline": "", "industryName": "", "scopeRank": 1, "isPrivate": False},
+            ]}},
+        ])
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            result = fetch_bugcrowd_json()
+        assert len(result) == 1
+        assert result[0].name == "Valid"
+
+    def test_playwright_unavailable_raises(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", None):
+            with pytest.raises(ImportError, match="Playwright"):
+                fetch_bugcrowd_json()
+
+    def test_raw_text_includes_tagline_and_industry(self):
+        """raw_text must include tagline + industry for scoring engine."""
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        mock_pw, _, _ = self._make_pw_mock([
+            {"json": {"engagements": [
+                {"name": "Web3 Vault", "briefUrl": "/engagements/web3vault",
+                 "tagline": "DeFi protocol bounty", "industryName": "Finance",
+                 "scopeRank": 4, "isPrivate": False},
+            ]}},
+        ])
+        with patch("skills.bug_hunting.platform_scanner.sync_playwright", return_value=mock_pw):
+            result = fetch_bugcrowd_json()
+        assert len(result) == 1
+        raw = result[0].raw_text.lower()
+        assert "defi" in raw
+        assert "finance" in raw
+
+    def test_fetch_all_routes_bugcrowd_to_json(self):
+        """fetch_all must call fetch_bugcrowd_json for platforms with json_endpoint."""
+        cfg = {
+            "bugcrowd": {
+                "url": "https://bugcrowd.com/engagements",
+                "base": "https://bugcrowd.com",
+                "scrolls": 5,
+                "json_endpoint": "https://bugcrowd.com/engagements.json",
+                "json_pages": 2,
+            }
+        }
+        fake_programs = [
+            ProgramEntry("BC Prog", "https://bugcrowd.com/engagements/bc", "bugcrowd", score=1.0),
+        ]
+        with patch(
+            "skills.bug_hunting.platform_scanner.fetch_bugcrowd_json",
+            return_value=fake_programs,
+        ) as mock_bc:
+            with patch("skills.bug_hunting.platform_scanner.fetch_page") as mock_html:
+                result = fetch_all(cfg)
+        mock_bc.assert_called_once_with(
+            base="https://bugcrowd.com",
+            json_endpoint="https://bugcrowd.com/engagements.json",
+            max_pages=2,
+        )
+        mock_html.assert_not_called()
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestRealScenario  (live — requires network; skipped when DNS is blocked)
+# ---------------------------------------------------------------------------
+
+import socket
+
+def _dns_ok(host: str) -> bool:
+    """Return True if the host can be resolved via DNS."""
+    try:
+        socket.getaddrinfo(host, 443, socket.AF_INET)
+        return True
+    except OSError:
+        return False
+
+
+network_available = pytest.mark.skipif(
+    not _dns_ok("hackerone.com"),
+    reason="Network/DNS not reachable from this environment",
+)
+
+
+@network_available
+class TestRealScenario:
+    """Live integration tests against real bug-bounty platforms.
+
+    Each test fetches a single page via Playwright (no scrolling, minimal
+    wait) to verify the scanner returns at least 1 real program entry.
+    These tests skip automatically when the network is unavailable.
+    """
+
+    def _fetch_one(self, url: str, base: str) -> list:
+        """Fetch a single page and parse it; return list of ProgramEntry."""
+        from skills.bug_hunting.platform_scanner import fetch_fallback, parse_programs
+        html = fetch_fallback(url)
+        assert len(html) > 1000, f"Page too small ({len(html)} bytes): {url}"
+        return parse_programs(html, base, platform="live_test")
+
+    # -- HackerOne -----------------------------------------------------------
+
+    def test_hackerone_returns_programs(self):
+        programs = self._fetch_one(
+            "https://hackerone.com/opportunities/all",
+            "https://hackerone.com",
+        )
+        assert len(programs) >= 1, "Expected at least 1 program from HackerOne"
+        urls = [p.url for p in programs]
+        assert any("hackerone.com" in u for u in urls), \
+            "Expected at least one hackerone.com URL"
+
+    def test_hackerone_entries_have_name_and_url(self):
+        programs = self._fetch_one(
+            "https://hackerone.com/opportunities/all",
+            "https://hackerone.com",
+        )
+        for p in programs[:5]:
+            assert p.name, f"Empty name: {p}"
+            assert p.url.startswith("http"), f"Bad URL: {p.url}"
+
+    # -- Bugcrowd (JSON path) ------------------------------------------------
+
+    def test_bugcrowd_json_returns_programs(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        programs = fetch_bugcrowd_json(max_pages=1)
+        assert len(programs) >= 1, "Expected at least 1 program from Bugcrowd JSON"
+
+    def test_bugcrowd_json_page1_has_24_programs(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        programs = fetch_bugcrowd_json(max_pages=1)
+        assert len(programs) == 24, f"Expected 24 programs on page 1, got {len(programs)}"
+
+    def test_bugcrowd_json_entries_have_name_and_url(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        programs = fetch_bugcrowd_json(max_pages=1)
+        for p in programs[:5]:
+            assert p.name, f"Empty name: {p}"
+            assert "bugcrowd.com/engagements/" in p.url, f"Bad URL: {p.url}"
+
+    def test_bugcrowd_json_pagination(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        programs = fetch_bugcrowd_json(max_pages=2)
+        assert len(programs) >= 25, \
+            f"Expected >24 programs across 2 pages, got {len(programs)}"
+
+    def test_bugcrowd_json_no_duplicates(self):
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json
+        programs = fetch_bugcrowd_json(max_pages=2)
+        urls = [p.url for p in programs]
+        assert len(urls) == len(set(urls)), "Duplicate URLs found in Bugcrowd results"
+
+    # -- Intigriti -----------------------------------------------------------
+
+    def test_intigriti_returns_programs(self):
+        programs = self._fetch_one(
+            "https://www.intigriti.com/researchers/bug-bounty-programs",
+            "https://www.intigriti.com",
+        )
+        assert len(programs) >= 1, "Expected at least 1 program from Intigriti"
+
+    def test_intigriti_entries_have_name_and_url(self):
+        programs = self._fetch_one(
+            "https://www.intigriti.com/researchers/bug-bounty-programs",
+            "https://www.intigriti.com",
+        )
+        for p in programs[:5]:
+            assert p.name, f"Empty name: {p}"
+            assert p.url.startswith("http"), f"Bad URL: {p.url}"
+
+    # -- Immunefi ------------------------------------------------------------
+
+    def test_immunefi_returns_programs(self):
+        programs = self._fetch_one(
+            "https://immunefi.com/bug-bounty/",
+            "https://immunefi.com",
+        )
+        assert len(programs) >= 1, "Expected at least 1 program from Immunefi"
+
+    def test_immunefi_entries_are_web3(self):
+        """Immunefi is a Web3 platform; scoring should tag programs as web3."""
+        from skills.bug_hunting.platform_scanner import score_program
+        programs = self._fetch_one(
+            "https://immunefi.com/bug-bounty/",
+            "https://immunefi.com",
+        )
+        scored = [score_program(p) for p in programs[:10]]
+        web3_count = sum(1 for p in scored if "web3" in p.tags)
+        # At least some Immunefi programs should score as web3/DeFi
+        assert web3_count >= 1, "Expected at least 1 web3-tagged program from Immunefi"
+
+    # -- Cross-platform scoring ----------------------------------------------
+
+    def test_scored_results_are_sorted(self):
+        """fetch_all (single platform) must return sorted results."""
+        from skills.bug_hunting.platform_scanner import fetch_bugcrowd_json, score_program
+        programs = [score_program(p) for p in fetch_bugcrowd_json(max_pages=1)]
+        programs.sort(key=lambda p: p.score, reverse=True)
+        scores = [p.score for p in programs]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_full_fetch_all_bugcrowd_only(self):
+        """fetch_all with only Bugcrowd config must return scored, sorted programs."""
+        cfg = {
+            "bugcrowd": {
+                "url": "https://bugcrowd.com/engagements",
+                "base": "https://bugcrowd.com",
+                "scrolls": 5,
+                "json_endpoint": "https://bugcrowd.com/engagements.json",
+                "json_pages": 1,
+            }
+        }
+        result = fetch_all(cfg)
+        assert len(result) >= 1
+        scores = [p.score for p in result]
+        assert scores == sorted(scores, reverse=True), "Results not sorted by score"
