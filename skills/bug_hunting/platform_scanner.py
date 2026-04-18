@@ -34,6 +34,29 @@ from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Optional browser-library imports (hoisted for testability)
+# ---------------------------------------------------------------------------
+# Importing at module level lets tests patch these names directly on the
+# module (e.g. ``patch("skills.bug_hunting.platform_scanner.ChromiumPage")``).
+# When a library is absent the name is set to None; functions that need it
+# raise ImportError with a helpful install message at call time.
+
+try:
+    from DrissionPage import ChromiumPage  # type: ignore[import]
+except ImportError:
+    ChromiumPage = None  # type: ignore[assignment,misc]
+
+try:
+    from playwright.sync_api import sync_playwright  # type: ignore[import]
+except ImportError:
+    sync_playwright = None  # type: ignore[assignment,misc]
+
+try:
+    from bs4 import BeautifulSoup  # type: ignore[import]
+except ImportError:
+    BeautifulSoup = None  # type: ignore[assignment,misc]
+
 
 # ---------------------------------------------------------------------------
 # Platform configuration
@@ -151,12 +174,10 @@ def fetch_dynamic_html(url: str, scrolls: int = 5) -> str:
     -------------------
     Increase ``scrolls`` for platforms with aggressive lazy loading (Immunefi: 7).
     """
-    try:
-        from DrissionPage import ChromiumPage  # type: ignore[import]
-    except ImportError as exc:
+    if ChromiumPage is None:
         raise ImportError(
             "DrissionPage is not installed. Run: pip install DrissionPage"
-        ) from exc
+        )
 
     page = ChromiumPage()
     try:
@@ -199,6 +220,7 @@ def fetch_fallback(url: str) -> str:
     -------------
     * Playwright not installed            → raises ``ImportError``
     * Page navigation timeout (120 s)    → empty string returned
+    * SSL/TLS interception by proxy      → mitigated by ``ignore_https_errors=True``
     * Partial DOM returned               → caller checks ``len(html) > _MIN_HTML_BYTES``
 
     MCP refinement hint
@@ -206,18 +228,22 @@ def fetch_fallback(url: str) -> str:
     Add ``page.wait_for_load_state("networkidle")`` if 8 s is insufficient for
     a specific platform.
     """
-    try:
-        from playwright.sync_api import sync_playwright  # type: ignore[import]
-    except ImportError as exc:
+    if sync_playwright is None:
         raise ImportError(
             "Playwright is not installed. Run: pip install playwright && "
             "python -m playwright install chromium"
-        ) from exc
+        )
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            # ignore_https_errors bypasses SSL cert issues caused by corporate
+            # HTTPS-intercepting proxies present in some sandbox environments.
+            ctx = browser.new_context(ignore_https_errors=True)
+            page = ctx.new_page()
             try:
                 page.goto(url, timeout=120_000)
                 # Wait for JS rendering; 8 s is a safe baseline
@@ -228,6 +254,7 @@ def fetch_fallback(url: str) -> str:
                 logger.warning("[Playwright] error on %s: %s", url, exc)
                 return ""
             finally:
+                ctx.close()
                 browser.close()
     except Exception as exc:  # noqa: BLE001
         logger.warning("[Playwright] launch error: %s", exc)
