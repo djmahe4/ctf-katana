@@ -29,13 +29,17 @@ from skills.bug_hunting.platform_scanner import (
     PLATFORM_CONFIG,
     PlatformScanner,
     ProgramEntry,
+    ProgramSelector,
     _MIN_HTML_BYTES,
     _apply_criteria,
     fetch_all,
+    fetch_bugcrowd_json,
+    fetch_fallback,
     fetch_page,
     parse_programs,
     run_platform_scan,
     score_program,
+    simulate_scan,
 )
 from skills.bug_hunting.run import run
 
@@ -992,15 +996,18 @@ class TestRealScenario:
         assert len(programs) >= 1, "Expected at least 1 program from Immunefi"
 
     def test_immunefi_entries_are_web3(self):
-        """Immunefi is a Web3 platform; scoring should tag programs as web3."""
+        """Immunefi is a Web3 platform; URL/name patterns should trigger web3 scoring."""
+        # Use the URL-based web3 detection: immunefi.com itself and /bug-bounty/
+        # path both contain tokens that score_program tags as web3.
         from skills.bug_hunting.platform_scanner import score_program
-        programs = self._fetch_one(
-            "https://immunefi.com/bug-bounty/",
-            "https://immunefi.com",
-        )
+        html = fetch_fallback("https://immunefi.com/bug-bounty/")
+        if not html or len(html) < 1000:
+            pytest.skip("Immunefi returned insufficient HTML in this environment")
+        programs = parse_programs(html, "https://immunefi.com", platform="immunefi")
+        if not programs:
+            pytest.skip("Immunefi returned 0 parseable program links — page structure may have changed")
         scored = [score_program(p) for p in programs[:10]]
         web3_count = sum(1 for p in scored if "web3" in p.tags)
-        # At least some Immunefi programs should score as web3/DeFi
         assert web3_count >= 1, "Expected at least 1 web3-tagged program from Immunefi"
 
     # -- Cross-platform scoring ----------------------------------------------
@@ -1028,3 +1035,234 @@ class TestRealScenario:
         assert len(result) >= 1
         scores = [p.score for p in result]
         assert scores == sorted(scores, reverse=True), "Results not sorted by score"
+
+    # -- Live simulate_scan --------------------------------------------------
+
+    def test_simulate_scan_patch_gap_returns_recommendations(self):
+        """simulate_scan with patch_gap strategy against Bugcrowd only."""
+        cfg = {
+            "bugcrowd": {
+                "url": "https://bugcrowd.com/engagements",
+                "base": "https://bugcrowd.com",
+                "scrolls": 5,
+                "json_endpoint": "https://bugcrowd.com/engagements.json",
+                "json_pages": 1,
+            }
+        }
+        result = simulate_scan(strategy="patch_gap", top_n=5, platforms=cfg)
+        assert result["status"] is True
+        assert result["strategy"] == "patch_gap"
+        assert result["total_scanned"] >= 1
+        assert "recommendations" in result
+        assert "platform_tips" in result
+        assert "pipeline_ready" in result
+
+    def test_simulate_scan_recommendations_are_ranked(self):
+        """Recommendations must be sorted by strategy_score descending."""
+        cfg = {
+            "bugcrowd": {
+                "url": "https://bugcrowd.com/engagements",
+                "base": "https://bugcrowd.com",
+                "scrolls": 5,
+                "json_endpoint": "https://bugcrowd.com/engagements.json",
+                "json_pages": 2,
+            }
+        }
+        result = simulate_scan(strategy="asset_heavy", top_n=10, platforms=cfg)
+        scores = [r["strategy_score"] for r in result["recommendations"]]
+        assert scores == sorted(scores, reverse=True), "Recommendations not sorted by strategy_score"
+
+    def test_simulate_scan_pipeline_urls_are_absolute(self):
+        """pipeline_ready list must contain only absolute http(s) URLs."""
+        cfg = {
+            "bugcrowd": {
+                "url": "https://bugcrowd.com/engagements",
+                "base": "https://bugcrowd.com",
+                "scrolls": 5,
+                "json_endpoint": "https://bugcrowd.com/engagements.json",
+                "json_pages": 1,
+            }
+        }
+        result = simulate_scan(strategy="patch_gap", top_n=5, platforms=cfg)
+        for url in result["pipeline_ready"]:
+            assert url.startswith("http"), f"Non-absolute URL in pipeline_ready: {url}"
+
+    def test_simulate_scan_web3_strategy_on_hackerone(self):
+        """web3_defi strategy on HackerOne should surface DeFi programs."""
+        cfg = {
+            "hackerone": {
+                "url": "https://hackerone.com/opportunities/all",
+                "base": "https://hackerone.com",
+                "scrolls": 3,
+            }
+        }
+        result = simulate_scan(strategy="web3_defi", top_n=5, platforms=cfg)
+        assert result["status"] is True
+        # At minimum, we get a result dict (programs may or may not have web3 tags)
+        assert isinstance(result["recommendations"], list)
+
+
+# ---------------------------------------------------------------------------
+# TestProgramSelector  (unit — mocked programs)
+# ---------------------------------------------------------------------------
+
+
+class TestProgramSelector:
+    """Unit tests for ProgramSelector with mocked ProgramEntry lists."""
+
+    def _make_programs(self) -> list:
+        from skills.bug_hunting.platform_scanner import score_program
+        return [
+            score_program(ProgramEntry("DeFi Vault", "https://immunefi.com/bug-bounty/defi-vault", "immunefi")),
+            score_program(ProgramEntry("IoT Firmware", "https://bugcrowd.com/engagements/iot-fw", "bugcrowd")),
+            score_program(ProgramEntry("New Launch", "https://intigriti.com/programs/new-launch", "intigriti")),
+            score_program(ProgramEntry("Acme Corp VDP", "https://hackerone.com/acme-vdp?vdp=true", "hackerone")),
+            score_program(ProgramEntry("Plain Web App", "https://hackerone.com/plain-webapp", "hackerone")),
+        ]
+
+    def test_select_returns_top_n(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector
+        sel = ProgramSelector(strategy="patch_gap")
+        recs = sel.select(self._make_programs(), top_n=3)
+        assert len(recs) <= 3
+
+    def test_select_sorted_by_strategy_score(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector
+        sel = ProgramSelector(strategy="web3_defi")
+        recs = sel.select(self._make_programs(), top_n=10)
+        scores = [r.strategy_score for r in recs]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_vdp_detected_by_name(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector
+        sel = ProgramSelector(strategy="patch_gap")
+        entry = ProgramEntry("Acme VDP", "https://hackerone.com/acme-vdp", "hackerone")
+        rec = sel.score_recommendation(entry)
+        assert rec.is_vdp is True
+
+    def test_vdp_detected_by_url(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector
+        sel = ProgramSelector(strategy="asset_heavy")
+        entry = ProgramEntry("Acme Corp", "https://hackerone.com/acme?vulnerability-disclosure=1", "hackerone")
+        rec = sel.score_recommendation(entry)
+        assert rec.is_vdp is True
+
+    def test_vdp_bonus_applied(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector, score_program
+        sel = ProgramSelector(strategy="patch_gap")
+        base = score_program(ProgramEntry("Acme", "https://hackerone.com/acme", "hackerone"))
+        vdp  = score_program(ProgramEntry("Acme VDP", "https://hackerone.com/acme-vdp", "hackerone"))
+        rec_vdp = sel.score_recommendation(vdp)
+        rec_base = sel.score_recommendation(base)
+        # VDP should get the vdp_bonus
+        assert rec_vdp.strategy_score >= rec_base.strategy_score
+
+    def test_rationale_non_empty_for_tagged_program(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector, score_program
+        sel = ProgramSelector(strategy="web3_defi")
+        entry = score_program(ProgramEntry("DeFi Vault", "https://immunefi.com/bug-bounty/defi-vault", "immunefi"))
+        rec = sel.score_recommendation(entry)
+        assert len(rec.rationale) >= 1
+
+    def test_unknown_strategy_falls_back_to_patch_gap(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector, HUNT_STRATEGY_WEIGHTS
+        sel = ProgramSelector(strategy="nonexistent_strategy")
+        assert sel.weights == HUNT_STRATEGY_WEIGHTS["patch_gap"]
+
+    def test_empty_programs_returns_empty(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector
+        sel = ProgramSelector(strategy="patch_gap")
+        assert sel.select([]) == []
+
+    def test_min_strategy_score_filter(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector
+        sel = ProgramSelector(strategy="patch_gap")
+        recs = sel.select(self._make_programs(), top_n=10, min_strategy_score=999.0)
+        assert recs == []
+
+    def test_platform_tip_populated(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector, PLATFORM_STRATEGY
+        sel = ProgramSelector(strategy="iot_hardware")
+        entry = ProgramEntry("IoT Device", "https://bugcrowd.com/engagements/iot-device", "bugcrowd")
+        rec = sel.score_recommendation(entry)
+        assert rec.platform_tip == PLATFORM_STRATEGY["bugcrowd"]["tip"]
+
+    def test_web3_strategy_boosts_immunefi(self):
+        from skills.bug_hunting.platform_scanner import ProgramSelector, score_program
+        sel = ProgramSelector(strategy="web3_defi")
+        immunefi = score_program(ProgramEntry("DeFi Protocol", "https://immunefi.com/bug-bounty/defi", "immunefi"))
+        h1 = score_program(ProgramEntry("Plain App", "https://hackerone.com/plain", "hackerone"))
+        rec_imm = sel.score_recommendation(immunefi)
+        rec_h1  = sel.score_recommendation(h1)
+        # Immunefi DeFi entry must outscore a plain HackerOne entry under web3_defi
+        assert rec_imm.strategy_score >= rec_h1.strategy_score
+
+
+# ---------------------------------------------------------------------------
+# TestSimulateScan  (unit — mocked fetch_all)
+# ---------------------------------------------------------------------------
+
+
+class TestSimulateScan:
+    """Unit tests for simulate_scan() with mocked fetch_all."""
+
+    def _fake_programs(self):
+        from skills.bug_hunting.platform_scanner import score_program
+        return [
+            score_program(ProgramEntry("DeFi Vault", "https://immunefi.com/bug-bounty/defi-vault", "immunefi")),
+            score_program(ProgramEntry("IoT Camera", "https://bugcrowd.com/engagements/iot-cam", "bugcrowd")),
+            score_program(ProgramEntry("New Program", "https://intigriti.com/programs/new", "intigriti")),
+        ]
+
+    def test_returns_status_true(self):
+        with patch("skills.bug_hunting.platform_scanner.fetch_all", return_value=self._fake_programs()):
+            result = simulate_scan(strategy="patch_gap", top_n=5)
+        assert result["status"] is True
+
+    def test_recommendations_capped_at_top_n(self):
+        with patch("skills.bug_hunting.platform_scanner.fetch_all", return_value=self._fake_programs()):
+            result = simulate_scan(strategy="patch_gap", top_n=2)
+        assert len(result["recommendations"]) <= 2
+
+    def test_recommendations_contain_required_keys(self):
+        with patch("skills.bug_hunting.platform_scanner.fetch_all", return_value=self._fake_programs()):
+            result = simulate_scan(strategy="web3_defi", top_n=5)
+        required = {"rank", "name", "url", "platform", "strategy_score", "tags", "is_vdp", "rationale", "platform_tip"}
+        for rec in result["recommendations"]:
+            assert required <= set(rec.keys()), f"Missing keys in recommendation: {rec}"
+
+    def test_pipeline_ready_deduped(self):
+        """Same base domain appearing multiple times must be deduplicated."""
+        programs = [
+            ProgramEntry("P1", "https://bugcrowd.com/engagements/p1", "bugcrowd", score=2.0, tags=["web3"]),
+            ProgramEntry("P2", "https://bugcrowd.com/engagements/p2", "bugcrowd", score=1.5, tags=["web3"]),
+        ]
+        with patch("skills.bug_hunting.platform_scanner.fetch_all", return_value=programs):
+            result = simulate_scan(strategy="patch_gap", top_n=5)
+        assert result["pipeline_ready"].count("https://bugcrowd.com") == 1
+
+    def test_fetch_all_exception_returns_error_status(self):
+        with patch("skills.bug_hunting.platform_scanner.fetch_all", side_effect=RuntimeError("crash")):
+            result = simulate_scan(strategy="patch_gap")
+        assert result["status"] is False
+        assert "error" in result
+
+    def test_platform_tips_present_for_all_platforms(self):
+        with patch("skills.bug_hunting.platform_scanner.fetch_all", return_value=[]):
+            result = simulate_scan(strategy="patch_gap")
+        for platform in ["hackerone", "bugcrowd", "intigriti", "immunefi"]:
+            assert platform in result["platform_tips"]
+
+    def test_strategy_stored_in_result(self):
+        with patch("skills.bug_hunting.platform_scanner.fetch_all", return_value=[]):
+            result = simulate_scan(strategy="iot_hardware")
+        assert result["strategy"] == "iot_hardware"
+
+    def test_all_strategies_produce_valid_results(self):
+        """Every defined strategy must run without error."""
+        from skills.bug_hunting.platform_scanner import HUNT_STRATEGY_WEIGHTS
+        programs = self._fake_programs()
+        for strat in HUNT_STRATEGY_WEIGHTS:
+            with patch("skills.bug_hunting.platform_scanner.fetch_all", return_value=programs):
+                result = simulate_scan(strategy=strat, top_n=3)
+            assert result["status"] is True, f"Strategy {strat!r} failed"

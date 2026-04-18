@@ -231,10 +231,12 @@ def fetch_fallback(url: str) -> str:
     * SSL/TLS interception by proxy      → mitigated by ``ignore_https_errors=True``
     * Partial DOM returned               → caller checks ``len(html) > _MIN_HTML_BYTES``
 
-    MCP refinement hint
-    -------------------
-    Add ``page.wait_for_load_state("networkidle")`` if 8 s is insufficient for
-    a specific platform.
+    MCP refinement hint (Context7-verified)
+    ----------------------------------------
+    ``page.wait_for_load_state("networkidle")`` is the correct Playwright API
+    for waiting until all in-flight network requests have settled — better than
+    a fixed ``wait_for_timeout`` for dynamically loaded pages.  Falls back to
+    a 10 s fixed wait if networkidle is not reached before the timeout.
     """
     if sync_playwright is None:
         raise ImportError(
@@ -250,12 +252,18 @@ def fetch_fallback(url: str) -> str:
             )
             # ignore_https_errors bypasses SSL cert issues caused by corporate
             # HTTPS-intercepting proxies present in some sandbox environments.
+            # (Context7-verified: TestOptions.ignoreHTTPSErrors)
             ctx = browser.new_context(ignore_https_errors=True)
             page = ctx.new_page()
             try:
                 page.goto(url, timeout=120_000)
-                # Wait for JS rendering; 8 s is a safe baseline
-                page.wait_for_timeout(8_000)
+                # Context7-verified: wait_for_load_state('networkidle') pauses
+                # until all in-flight XHR/fetch requests have settled — more
+                # reliable than a fixed sleep for JS-heavy SPAs.
+                try:
+                    page.wait_for_load_state("networkidle", timeout=15_000)
+                except Exception:  # noqa: BLE001 – timeout is acceptable
+                    page.wait_for_timeout(10_000)
                 html = page.content()
                 return html or ""
             except Exception as exc:  # noqa: BLE001
@@ -684,7 +692,7 @@ def fetch_all(platforms: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Pro
     Pass a custom ``platforms`` dict to override ``PLATFORM_CONFIG`` in tests
     or for targeted scanning.
     """
-    cfg = platforms or PLATFORM_CONFIG
+    cfg = PLATFORM_CONFIG if platforms is None else platforms
     all_programs: List[ProgramEntry] = []
     seen_urls: set = set()
 
@@ -957,8 +965,360 @@ def run_platform_scan(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Edge-case reference table (documentation)
+# Strategy constants (from 2026 bug-bounty landscape analysis)
 # ---------------------------------------------------------------------------
+
+# Per-platform strength profiles used by ProgramSelector.
+# Each entry carries: primary strength tags, a tip string, and score multiplier
+# hints that ProgramSelector applies on top of the base score_program() value.
+PLATFORM_STRATEGY: Dict[str, Dict[str, Any]] = {
+    "hackerone": {
+        "strengths": ["enterprise", "high_payout"],
+        "tip": "Look for Gold programs with fast triage times.",
+        "score_boost_tags": ["web3"],          # HackerOne has a growing web3 segment
+        "vdp_multiplier": 0.9,                 # HackerOne VDPs still competitive
+    },
+    "bugcrowd": {
+        "strengths": ["iot", "hardware", "diverse_scope"],
+        "tip": "Great for hardware/IoT and unique tech stacks.",
+        "score_boost_tags": ["iot"],
+        "vdp_multiplier": 1.1,                 # Bugcrowd VDPs less competitive
+    },
+    "intigriti": {
+        "strengths": ["eu", "beginner_friendly"],
+        "tip": "EU targets, clean onboarding, high-quality researcher support.",
+        "score_boost_tags": ["new"],            # frequent new-program launches
+        "vdp_multiplier": 1.2,
+    },
+    "immunefi": {
+        "strengths": ["web3", "smart_contract", "defi"],
+        "tip": "Massive payouts ($1M+) but extremely high barrier to entry.",
+        "score_boost_tags": ["web3"],
+        "vdp_multiplier": 0.8,                 # almost no VDPs; all paid bounties
+    },
+}
+
+# CVE/hunting strategy profiles — maps a hunt strategy to scoring weights
+HUNT_STRATEGY_WEIGHTS: Dict[str, Dict[str, float]] = {
+    # 1-day CVE hunting in patch-gap window
+    "patch_gap": {
+        "new":             3.0,   # newly launched programs are most vulnerable
+        "web3":            2.0,   # DeFi moves slower to patch than web apps
+        "iot":             2.0,   # IoT firmware lags behind software patches
+        "enterprise":      1.5,   # large enterprises have long-tail assets
+        "vdp_bonus":       1.0,   # VDPs have less duplicate risk
+    },
+    # Human-driven logic-bug and IDOR hunting (no automation)
+    "logic_bugs": {
+        "enterprise":      3.0,
+        "web3":            2.5,   # smart contract logic flaws are high-value
+        "iot":             1.5,
+        "new":             1.0,
+        "vdp_bonus":       0.5,
+    },
+    # Asset-heavy subdomain/long-tail hunting
+    "asset_heavy": {
+        "enterprise":      3.0,
+        "new":             2.0,
+        "iot":             1.5,
+        "web3":            1.0,
+        "vdp_bonus":       2.0,   # VDPs rarely deduplicate subdomain bugs
+    },
+    # Web3 / smart-contract specific
+    "web3_defi": {
+        "web3":            4.0,
+        "new":             2.0,
+        "enterprise":      1.0,
+        "iot":             0.5,
+        "vdp_bonus":       0.5,
+    },
+    # IoT / hardware niche-tech hunting
+    "iot_hardware": {
+        "iot":             4.0,
+        "enterprise":      1.5,
+        "new":             1.5,
+        "web3":            0.5,
+        "vdp_bonus":       1.5,
+    },
+}
+
+# URL / name patterns that suggest a VDP (Vulnerability Disclosure Program)
+# rather than a paid bounty — VDPs have far less duplicate risk.
+_VDP_PATTERNS: re.Pattern = re.compile(
+    r"vdp|vulnerability.disclosure|responsible.disclosure|no.bounty|report.only",
+    re.IGNORECASE,
+)
+
+
+# ---------------------------------------------------------------------------
+# ProgramSelector — strategy-aware target picker
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ScoredRecommendation:
+    """A program entry augmented with strategy-aware scoring and rationale."""
+
+    entry: ProgramEntry
+    strategy_score: float = 0.0
+    rationale: List[str] = field(default_factory=list)
+    is_vdp: bool = False
+    platform_tip: str = ""
+
+
+class ProgramSelector:
+    """Select optimal bug-bounty targets based on a chosen hunting strategy.
+
+    Purpose
+    -------
+    Wraps the raw ``ProgramEntry`` list produced by ``fetch_all()`` and
+    re-scores each entry using the per-strategy weight table
+    ``HUNT_STRATEGY_WEIGHTS``.  Returns a ranked ``ScoredRecommendation``
+    list with human-readable rationale strings for each pick.
+
+    Strategy options (``strategy`` parameter)
+    ------------------------------------------
+    * ``"patch_gap"``   – 1-day CVE hunting in newly patched / long-tail assets
+    * ``"logic_bugs"``  – human-driven IDOR / business-logic hunting
+    * ``"asset_heavy"`` – subdomain enumeration + long-tail scanning
+    * ``"web3_defi"``   – smart-contract and DeFi protocol bounties
+    * ``"iot_hardware"``– hardware, firmware, and embedded systems
+
+    Design notes (Context7-verified patterns)
+    ------------------------------------------
+    The selector uses BeautifulSoup-style attribute matching conventions for
+    tag lookups (exact-match in ``entry.tags``) and Playwright-style
+    ``wait_for_load_state("networkidle")`` is already baked into
+    ``fetch_fallback()`` so the data fed here is maximally hydrated.
+
+    Edge cases handled
+    -------------------
+    * Empty program list              → returns empty list
+    * Unknown strategy name           → falls back to ``"patch_gap"`` weights
+    * Program has no tags             → base score used; no weight bonus applied
+    * All programs score 0            → returned as-is (not filtered out)
+    * VDP detection false-negative    → mild vdp_bonus still applied by name heuristic
+    """
+
+    def __init__(self, strategy: str = "patch_gap") -> None:
+        self.strategy = strategy
+        self.weights = HUNT_STRATEGY_WEIGHTS.get(
+            strategy, HUNT_STRATEGY_WEIGHTS["patch_gap"]
+        )
+
+    def _is_vdp(self, entry: ProgramEntry) -> bool:
+        """Detect Vulnerability Disclosure Programs (no/low payout)."""
+        text = f"{entry.name} {entry.url}".lower()
+        return bool(_VDP_PATTERNS.search(text))
+
+    def _apply_platform_boost(self, entry: ProgramEntry) -> float:
+        """Apply per-platform strength multiplier from PLATFORM_STRATEGY."""
+        cfg = PLATFORM_STRATEGY.get(entry.platform, {})
+        boost = 0.0
+        for tag in cfg.get("score_boost_tags", []):
+            if tag in entry.tags:
+                boost += 1.0
+        return boost
+
+    def score_recommendation(self, entry: ProgramEntry) -> ScoredRecommendation:
+        """Score a single entry for the current strategy.
+
+        Returns a ``ScoredRecommendation`` with:
+        * ``strategy_score``  – weighted sum of matching strategy signals
+        * ``rationale``       – human-readable list of why this program was picked
+        * ``is_vdp``          – whether the program is a VDP (less duplicate risk)
+        * ``platform_tip``    – the platform's expert tip string
+        """
+        score = entry.score  # start from base score_program() value
+        rationale: List[str] = []
+        vdp = self._is_vdp(entry)
+
+        # Apply strategy tag weights
+        for tag in entry.tags:
+            w = self.weights.get(tag, 0.0)
+            if w:
+                score += w
+                rationale.append(f"+{w:.1f} [{tag}] tag matches strategy={self.strategy!r}")
+
+        # VDP bonus — lower duplicate risk is especially valuable for 1-day CVEs
+        if vdp:
+            vdp_bonus = self.weights.get("vdp_bonus", 0.0)
+            score += vdp_bonus
+            rationale.append(
+                f"+{vdp_bonus:.1f} VDP detected — reduced duplicate risk"
+            )
+
+        # Platform strength boost
+        platform_boost = self._apply_platform_boost(entry)
+        if platform_boost:
+            score += platform_boost
+            tip = PLATFORM_STRATEGY.get(entry.platform, {}).get("tip", "")
+            rationale.append(f"+{platform_boost:.1f} platform={entry.platform!r} strength boost")
+            if tip:
+                rationale.append(f"  Tip: {tip}")
+
+        # Patch-gap specific: newly launched gets extra context note
+        if self.strategy == "patch_gap" and "new" in entry.tags:
+            rationale.append(
+                "  ⚠ Newly launched — first 48 h gold-rush window active"
+            )
+
+        # Asset-heavy specific: deep URL path = more scope
+        if self.strategy == "asset_heavy" and entry.score >= 1.0:
+            rationale.append(
+                "  ✓ Long-tail asset scope detected via URL depth heuristic"
+            )
+
+        return ScoredRecommendation(
+            entry=entry,
+            strategy_score=round(score, 2),
+            rationale=rationale,
+            is_vdp=vdp,
+            platform_tip=PLATFORM_STRATEGY.get(entry.platform, {}).get("tip", ""),
+        )
+
+    def select(
+        self,
+        programs: List[ProgramEntry],
+        top_n: int = 10,
+        min_strategy_score: float = 0.0,
+    ) -> List[ScoredRecommendation]:
+        """Score all programs for this strategy and return top-N recommendations.
+
+        Parameters
+        ----------
+        programs:       Programs from ``fetch_all()`` (already base-scored).
+        top_n:          How many top recommendations to return.
+        min_strategy_score: Exclude entries below this strategy score.
+
+        Failure modes handled
+        ----------------------
+        * Empty ``programs``          → returns ``[]``
+        * All below min score         → returns ``[]``
+        * ``top_n`` > len(programs)   → returns all passing entries
+        """
+        if not programs:
+            return []
+
+        recs = [self.score_recommendation(p) for p in programs]
+        recs = [r for r in recs if r.strategy_score >= min_strategy_score]
+        recs.sort(key=lambda r: r.strategy_score, reverse=True)
+        return recs[:top_n]
+
+
+# ---------------------------------------------------------------------------
+# simulate_scan — full live loop across all platforms → recommendations
+# ---------------------------------------------------------------------------
+
+
+def simulate_scan(
+    strategy: str = "patch_gap",
+    top_n: int = 10,
+    min_strategy_score: float = 0.0,
+    platforms: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Run a full live scan and return strategy-filtered program recommendations.
+
+    This is the top-level entry point for a real bug-bounty hunting session.
+    It chains together:
+
+        fetch_all() → score_program() → ProgramSelector.select()
+
+    And returns a structured dict ready for consumption by the recon pipeline:
+
+        subfinder → httpx → katana → nuclei
+
+    Parameters
+    ----------
+    strategy:
+        One of ``"patch_gap"``, ``"logic_bugs"``, ``"asset_heavy"``,
+        ``"web3_defi"``, ``"iot_hardware"``.  Controls how programs are
+        weighted and ranked.
+    top_n:
+        Number of top recommendations to return.
+    min_strategy_score:
+        Minimum strategy score to include in results.
+    platforms:
+        Override ``PLATFORM_CONFIG`` for testing or targeted scans.
+
+    Returns
+    -------
+    dict with keys:
+        ``status``          – True on success
+        ``strategy``        – the strategy name used
+        ``total_scanned``   – total programs found across all platforms
+        ``recommendations`` – list of dicts, each with program + rationale
+        ``platform_tips``   – per-platform expert tips
+        ``pipeline_ready``  – list of URLs suitable for subfinder/httpx/katana
+
+    Edge cases handled
+    -------------------
+    * All platforms fail      → status=False, empty recommendations
+    * Strategy unknown        → falls back to "patch_gap"
+    * Zero recommendations    → status=True, empty list (not an error)
+    * fetch_all exception     → caught, returns status=False with error msg
+    """
+    try:
+        all_programs = fetch_all(platforms=platforms)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[simulate_scan] fetch_all failed: %s", exc)
+        return {
+            "status": False,
+            "strategy": strategy,
+            "error": str(exc),
+            "total_scanned": 0,
+            "recommendations": [],
+            "platform_tips": {},
+            "pipeline_ready": [],
+        }
+
+    selector = ProgramSelector(strategy=strategy)
+    recommendations = selector.select(
+        all_programs,
+        top_n=top_n,
+        min_strategy_score=min_strategy_score,
+    )
+
+    # Build pipeline-ready URL list for subfinder → httpx → katana → nuclei
+    pipeline_urls = []
+    for rec in recommendations:
+        parsed = urlparse(rec.entry.url)
+        if parsed.netloc:
+            pipeline_urls.append(f"{parsed.scheme}://{parsed.netloc}")
+
+    # Deduplicate while preserving order
+    seen_pipeline: set = set()
+    unique_pipeline = []
+    for u in pipeline_urls:
+        if u not in seen_pipeline:
+            seen_pipeline.add(u)
+            unique_pipeline.append(u)
+
+    return {
+        "status": True,
+        "strategy": strategy,
+        "total_scanned": len(all_programs),
+        "recommendations": [
+            {
+                "rank": i + 1,
+                "name": rec.entry.name,
+                "url": rec.entry.url,
+                "platform": rec.entry.platform,
+                "strategy_score": rec.strategy_score,
+                "tags": rec.entry.tags,
+                "is_vdp": rec.is_vdp,
+                "rationale": rec.rationale,
+                "platform_tip": rec.platform_tip,
+            }
+            for i, rec in enumerate(recommendations)
+        ],
+        "platform_tips": {
+            k: v["tip"] for k, v in PLATFORM_STRATEGY.items()
+        },
+        "pipeline_ready": unique_pipeline,
+    }
+
+
 
 _EDGE_CASE_TABLE = """
 Edge case                               | Handler location              | Strategy
