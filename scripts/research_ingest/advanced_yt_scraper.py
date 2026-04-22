@@ -360,7 +360,8 @@ class AdvancedYTScraper:
         is_ui_hidden = False
         results = []
         
-        while time.time() - start_time < max_duration:
+        curr_video_time = 0
+        while curr_video_time < max_duration:
             try:
                 # 1. Detection
                 video_node, is_ad, is_visible = self._get_active_video()
@@ -441,6 +442,7 @@ class AdvancedYTScraper:
 
                     if should_save and not self.is_ad_content(frame_path, curr_text):
                         self.logger.info(f"[+] Saved frame {frames_saved} - T:{curr_video_time:.1f}s - Reason: {reason}")
+                        os.remove(frame_path)
                         
                         txt_path = frame_path.replace(".png", ".txt")
                         with open(txt_path, "w", encoding="utf-8") as f:

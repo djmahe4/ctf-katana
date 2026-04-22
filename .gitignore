@@ -39,3 +39,7 @@ target/
 **/*.rs.bk
 debug/
 release/
+*.png
+thm_rooms.csv
+thm_cookies.json
+*thm_session/
