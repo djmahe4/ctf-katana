@@ -380,7 +380,7 @@ class TryHackMeScraper:
                 
                 if any(domain in href.lower() for domain in ['0xdf.net', 'ippsec.rocks', 'writeup', 'gitbook.io', 'medium.com']):
                     if 'medium.com' in href:
-                        href = f"https://freedium.cfd/{href}"
+                        href = f"https://freedium-mirror.cfd/{href}"
                     if href not in writeup_urls:
                         writeup_urls.append(href)
                 elif 'youtube.com' in href or 'youtu.be' in href:
@@ -401,7 +401,7 @@ class TryHackMeScraper:
             
             if any(domain in href.lower() for domain in ['medium.com', '0xdf.net', 'ippsec', 'writeup', 'gitbook.io']):
                 if 'medium.com' in href:
-                    href = f"https://freedium.cfd/{href}"
+                    href = f"https://freedium-mirror.cfd/{href}"
                 if href not in writeup_urls:
                     writeup_urls.append(href)
             elif 'youtube.com' in href or 'youtu.be' in href:
@@ -575,10 +575,10 @@ def run(params):
                             else:
                                 logger.warning("YouTube scraper returned no results.")
                                 
-                        elif "freedium.cfd" in url and FreediumScraper:
+                        elif "freedium-mirror.cfd" in url and FreediumScraper:
                             logger.info(f"Using FreediumScraper for: {url}")
                             f_scraper = FreediumScraper()
-                            medium_url = url.replace("https://freedium.cfd/", "")
+                            medium_url = url.replace("https://freedium-mirror.cfd/", "")
                             text = f_scraper.scrape(medium_url)
                         else:
                             text = scraper.extract_writeup_text(url)

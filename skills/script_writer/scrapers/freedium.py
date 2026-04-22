@@ -3,7 +3,7 @@
 This module provides two classes:
 
 * ``FreediumScraper`` – fetches Medium articles through the
-  ``freedium.cfd`` paywall-bypass proxy.  Uses ``DrissionPage``
+  ``freedium-mirror.cfd`` paywall-bypass proxy.  Uses ``DrissionPage``
   (``SessionPage``) by default with an automatic fallback to
   ``Playwright`` when the dependency is unavailable or the request fails.
 
@@ -66,7 +66,7 @@ class FreediumScraper:
         Force the Playwright back-end instead of DrissionPage.
     """
 
-    _FREEDIUM_BASE = "https://freedium.cfd/"
+    _FREEDIUM_BASE = "https://freedium-mirror.cfd/"
     _USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
