@@ -161,7 +161,7 @@ class AgenticSkillDispatcher:
         """
         logger.info("🎨 Drafting challenge artifacts via Local Ollama (Deep Thinking)...")
         
-        snippets = research.get('purple_loop', {}).get('snippets', [])
+        snippets = research.get('purple_loop', {}).get('intelligence_snippets', [])
         # Grounding: Use up to 5 highest-relevance snippets
         content_context = "\n".join([f"- {s.get('context', 'Snippet')}: {s.get('content', '')}" for s in snippets[:5]])
 
@@ -177,11 +177,12 @@ class AgenticSkillDispatcher:
         {content_context}
 
         Requirements:
-        1. **Core Vulnerability**: Identify and implement the exact vulnerability described in the snippets.
-        2. **Minimal Application**: Create a realistic web application (Python/Flask or Node/Express) that demonstrates the vulnerability.
-        3. **Exploitable**: Ensure the vulnerability is exploitable exactly as described in the research.
-        4. **Flag Location**: Include a flag at `/app/flag.txt` or similar identifiable location.
-        5. **Docker Support**: Provide a `Dockerfile` for easy deployment.
+        1. **Core Vulnerability**: Identify and implement the exact vulnerability described in the research snippets or walkthroughs.
+        2. **Walkthrough Reconstruction**: If the snippets contain walkthrough steps, use them to reconstruct the original vulnerable logic and misconfigurations.
+        3. **Minimal Application**: Create a realistic application (Python/Flask, Node/Express, or similar) that demonstrates the vulnerability.
+        4. **Exploitable**: Ensure the vulnerability is exploitable exactly as described in the research.
+        5. **Flag Location**: Include a flag at `/app/flag.txt` or similar identifiable location.
+        6. **Docker Support**: Provide a `Dockerfile` for easy deployment.
 
         Output Format (Strict JSON):
         {{

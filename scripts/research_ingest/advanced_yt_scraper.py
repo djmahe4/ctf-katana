@@ -6,7 +6,10 @@ from datetime import datetime
 import cv2
 import numpy as np
 from PIL import Image
-import pytesseract
+try:
+    import easyocr
+except ImportError:
+    easyocr = None
 from DrissionPage import ChromiumPage, ChromiumOptions
 
 class AdvancedYTScraper:
@@ -35,15 +38,12 @@ class AdvancedYTScraper:
         self.is_terminal_mode = False
         self.video_metadata = {}
         
-        # Optional: Set tesseract path if found in common Windows locations
-        tess_paths = [
-            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-            r'C:\Users\mahes\AppData\Local\Tesseract-OCR\tesseract.exe'
-        ]
-        for p in tess_paths:
-            if os.path.exists(p):
-                pytesseract.pytesseract.tesseract_cmd = p
-                break
+        # EasyOCR Setup
+        if easyocr:
+            self.reader = easyocr.Reader(['en'], gpu=False) # Use CPU for now as requested or detected
+        else:
+            self.reader = None
+            self.logger.warning("EasyOCR not found. OCR extraction will be disabled.")
 
     def _get_histogram(self, image_path):
         """Calculates a normalized color histogram for an image."""
@@ -187,7 +187,7 @@ class AdvancedYTScraper:
             os.remove(os.path.join(self.output_dir, f))
 
     def _preprocess_for_ocr(self, image_path):
-        """Optimizes images for Tesseract OCR: Resize + Grayscale + Adaptive Threshold."""
+        """Optimizes images for EasyOCR: Resize + Grayscale."""
         try:
             img = cv2.imread(image_path)
             if img is None: return None
@@ -195,18 +195,12 @@ class AdvancedYTScraper:
             # 1. Grayscale
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             
-            # 2. Resize (2x) to fix aliasing/small text
+            # 2. Resize (2x) to fix small text
             resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-            
-            # 3. Adaptive Thresholding (handle shadows/gradients)
-            processed = cv2.adaptiveThreshold(
-                resized, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY, 11, 2
-            )
             
             # Save processed version
             proc_path = image_path.replace(".png", "_ocr.png")
-            cv2.imwrite(proc_path, processed)
+            cv2.imwrite(proc_path, resized)
             return proc_path
         except Exception as e:
             self.logger.error(f"Preprocessing failed: {e}")
@@ -297,10 +291,13 @@ class AdvancedYTScraper:
             return "Error"
 
     def _get_text(self, ocr_image_path):
-        """Extract full text from preprocessed image."""
+        """Extract full text from preprocessed image using EasyOCR."""
         try:
-            # Use PSM 6 (Assume a uniform block of text) for faster terminal OCR
-            text = pytesseract.image_to_string(Image.open(ocr_image_path), config='--psm 6')
+            if not self.reader:
+                return ""
+            # EasyOCR returns a list of results (bbox, text, confidence)
+            results = self.reader.readtext(ocr_image_path)
+            text = " ".join([res[1] for res in results])
             return text.strip()
         except Exception as e:
             self.logger.warning(f"[!] OCR Error: {e}")
@@ -336,14 +333,51 @@ class AdvancedYTScraper:
             
         return False
 
-    def run(self, url, max_duration=None):
-        """Main scraping loop. Returns structured OCR results."""
+    def chunk_results(self, results, interval=120):
+        """
+        Splits the results into timestamped chunks for LLM ingestion.
+        interval: Chunk size in seconds (default 2 minutes).
+        """
+        if not results:
+            return []
+            
+        chunks = []
+        current_chunk = {
+            "start_time": results[0]["timestamp"],
+            "end_time": results[0]["timestamp"],
+            "combined_text": ""
+        }
+        
+        last_text = ""
+        for res in results:
+            if res["timestamp"] - current_chunk["start_time"] > interval:
+                # Close current chunk
+                chunks.append(current_chunk)
+                # Start new chunk
+                current_chunk = {
+                    "start_time": res["timestamp"],
+                    "end_time": res["timestamp"],
+                    "combined_text": ""
+                }
+            
+            # Deduplicate text within chunk if very similar to previous frame
+            if res["ocr_text"] != last_text:
+                current_chunk["combined_text"] += f"\n[{res['timestamp']:.1f}s] {res['ocr_text']}"
+                last_text = res["ocr_text"]
+            
+            current_chunk["end_time"] = res["timestamp"]
+            
+        chunks.append(current_chunk)
+        return chunks
+
+    def run(self, url, max_duration=None, chunk_interval=120):
+        """Main scraping loop. Returns chunked OCR results."""
         self.logger.info(f"[*] Starting scrape: {url}")
         self.page.get(url)
         
         # Wait for video to be ready and metadata to load
-        self.page.wait.ele_displayed('.html5-main-video', timeout=10)
-        time.sleep(2) # Extra buffer for JS to update duration
+        self.page.wait.ele_displayed('.html5-main-video', timeout=15)
+        time.sleep(3) # Extra buffer for JS to update duration
         
         # Initial Quality Set
         self.force_high_quality()
@@ -358,7 +392,7 @@ class AdvancedYTScraper:
         start_time = time.time()
         frames_saved = 0
         is_ui_hidden = False
-        results = []
+        raw_results = []
         
         curr_video_time = 0
         while curr_video_time < max_duration:
@@ -426,53 +460,51 @@ class AdvancedYTScraper:
                         reason = "Initial frame"
                     else:
                         dist = cv2.compareHist(self.last_histogram, curr_hist, cv2.HISTCMP_BHATTACHARYYA)
-                        if dist > 0.01:
+                        if dist > 0.005: # More sensitive threshold
                             should_save = True
                             reason = f"Visual change ({dist:.3f})"
                         
                         len_diff = abs(curr_text_len - self.last_text_len)
-                        if len_diff > 10:
+                        if len_diff > 5: # More sensitive
                             should_save = True
                             reason = f"Text change ({len_diff})"
                         
-                        if self.is_terminal_mode and (curr_time - self.last_capture_time > 1.0):
+                        if self.is_terminal_mode and (curr_time - self.last_capture_time > 1.5):
                             if len_diff > 2:
                                 should_save = True
                                 reason = "Terminal update"
 
                     if should_save and not self.is_ad_content(frame_path, curr_text):
-                        self.logger.info(f"[+] Saved frame {frames_saved} - T:{curr_video_time:.1f}s - Reason: {reason}")
-                        os.remove(frame_path)
+                        self.logger.info(f"[+] Captured frame {frames_saved} - T:{curr_video_time:.1f}s - Reason: {reason}")
                         
-                        txt_path = frame_path.replace(".png", ".txt")
-                        with open(txt_path, "w", encoding="utf-8") as f:
-                            f.write(curr_text)
+                        # Keep OCR text only if it has content
+                        if curr_text_len > 10:
+                            raw_results.append({
+                                "timestamp": curr_video_time,
+                                "ocr_text": curr_text,
+                                "is_terminal": self.is_terminal_mode
+                            })
+                            frames_saved += 1
                         
-                        results.append({
-                            "timestamp": curr_video_time,
-                            "frame_path": frame_path,
-                            "text_path": txt_path,
-                            "ocr_text": curr_text,
-                            "is_terminal": self.is_terminal_mode
-                        })
-                            
-                        frames_saved += 1
                         self.last_histogram = curr_hist
                         self.last_text_len = curr_text_len
                         self.last_capture_time = curr_time
-                    else:
-                        os.remove(frame_path)
-                        if os.path.exists(ocr_path): os.remove(ocr_path)
+                    
+                    # Clean up images immediately to save space
+                    if os.path.exists(frame_path): os.remove(frame_path)
+                    if os.path.exists(ocr_path): os.remove(ocr_path)
                 
-                time.sleep(1/5)
+                time.sleep(1/3) # Moderate sampling rate
                 
             except Exception as e:
                 self.logger.error(f"[-] Loop iteration error: {e}")
                 time.sleep(1)
 
-        self.logger.info(f"[*] Scrape complete. Captured {len(results)} structured data points.")
+        self.logger.info(f"[*] Raw capture complete. Chunking {len(raw_results)} data points...")
+        chunked_results = self.chunk_results(raw_results, interval=chunk_interval)
+        
         self.page.quit()
-        return results
+        return chunked_results
 
 if __name__ == "__main__":
     import argparse

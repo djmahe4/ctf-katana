@@ -340,12 +340,19 @@ class TryHackMeScraper:
 
     def save_rooms_to_csv(self, rooms, filename='thm_rooms.csv'):
         if not rooms: return
-        # Ensure all rooms have the same keys, including the new writeup_links
+        # Ensure all rooms have all necessary keys
+        default_keys = {
+            'writeup_links': "",
+            'github_links': "",
+            'medium_links': "",
+            'youtube_links': ""
+        }
         for room in rooms:
-            if 'writeup_links' not in room:
-                room['writeup_links'] = ""
+            for k, v in default_keys.items():
+                if k not in room:
+                    room[k] = v
                 
-        keys = ['name', 'url', 'difficulty', 'writeup_links']
+        keys = ['name', 'url', 'difficulty', 'writeup_links', 'github_links', 'medium_links', 'youtube_links']
         with open(filename, 'w', newline='', encoding='utf-8') as f:
             dict_writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
             dict_writer.writeheader()
@@ -361,56 +368,58 @@ class TryHackMeScraper:
         if is_premium:
             logger.info(f"Room {room_name} is premium on THM. Searching external sources...")
         
-        writeup_urls = []
+        # Categorized links
+        github_links = []
+        medium_links = []
         yt_links = []
+        other_links = []
         
+        def categorize_link(href):
+            if not href: return
+            href_lower = href.lower()
+            if 'github.com' in href_lower:
+                if href not in github_links: github_links.append(href)
+            elif 'medium.com' in href_lower or 'freedium' in href_lower:
+                # Standardize to freedium for scraping
+                if 'medium.com' in href_lower and 'freedium' not in href_lower:
+                    href = f"https://freedium-mirror.cfd/{href}"
+                if href not in medium_links: medium_links.append(href)
+            elif 'youtube.com' in href_lower or 'youtu.be' in href_lower:
+                if href not in yt_links: yt_links.append(href)
+            elif any(domain in href_lower for domain in ['0xdf.net', 'ippsec.rocks', 'writeup', 'gitbook.io', 'thmwriteups.page']):
+                if href not in other_links: other_links.append(href)
+
+        # 1. Check THM page if not premium
         if not is_premium:
-            # Check for a 'Writeups' tab or section
             writeups_ele = self.page.ele('text:Writeups') or self.page.ele('t:a@text()=Writeups')
             if writeups_ele:
-                logger.info("Found 'Writeups' section on room page.")
                 writeups_ele.click()
                 time.sleep(2)
-                
-            # Extract links from the room page
-            links = self.page.eles('tag:a')
-            for link in links:
-                href = link.link
-                if not href: continue
-                
-                if any(domain in href.lower() for domain in ['0xdf.net', 'ippsec.rocks', 'writeup', 'gitbook.io', 'medium.com']):
-                    if 'medium.com' in href:
-                        href = f"https://freedium-mirror.cfd/{href}"
-                    if href not in writeup_urls:
-                        writeup_urls.append(href)
-                elif 'youtube.com' in href or 'youtu.be' in href:
-                    if href not in yt_links:
-                        yt_links.append(href)
-        
-        # Always search DuckDuckGo for comprehensive coverage
-        logger.info(f"Searching DuckDuckGo for {room_name} writeups...")
-        search_query = f"TryHackMe {room_name} writeup"
-        search_url = f"https://duckduckgo.com/?q={search_query.replace(' ', '+')}"
-        self.page.get(search_url)
-        time.sleep(2)
-        
-        links = self.page.eles('tag:a')
-        for link in links:
-            href = link.link
-            if not href or 'duckduckgo' in href: continue
             
-            if any(domain in href.lower() for domain in ['medium.com', '0xdf.net', 'ippsec', 'writeup', 'gitbook.io']):
-                if 'medium.com' in href:
-                    href = f"https://freedium-mirror.cfd/{href}"
-                if href not in writeup_urls:
-                    writeup_urls.append(href)
-            elif 'youtube.com' in href or 'youtu.be' in href:
-                if href not in yt_links:
-                    yt_links.append(href)
+            for link in self.page.eles('tag:a'):
+                categorize_link(link.link)
         
-        # Merge and prioritize text
-        final_urls = [u for u in writeup_urls if u not in yt_links] + yt_links
-        return final_urls[:5], is_premium
+        # 2. Search DuckDuckGo
+        search_query = f"TryHackMe {room_name} writeup"
+        self.page.get(f"https://duckduckgo.com/?q={search_query.replace(' ', '+')}")
+        time.sleep(2)
+        for link in self.page.eles('tag:a'):
+            href = link.link
+            if href and 'duckduckgo' not in href:
+                categorize_link(href)
+        
+        # Prioritize: GitHub > Medium > Others > YouTube
+        # (User said markdown (github) > medium(paywall) > youtube)
+        final_urls = github_links + medium_links + other_links + yt_links
+        
+        return {
+            "all_urls": final_urls[:10],
+            "github": github_links,
+            "medium": medium_links,
+            "youtube": yt_links,
+            "others": other_links,
+            "is_premium": is_premium
+        }
 
     def extract_writeup_text(self, url):
         logger.info(f"Extracting content from {url}...")
@@ -510,15 +519,47 @@ def run(params):
         else:
             logger.info("Active session detected. Proceeding to challenges...")
             
-        # Always scrape for fresh data as requested by user
-        logger.info("Starting automated room scraping (Newest + Medium/Hard/Insane)...")
-        rooms = scraper.scrape_rooms()
+        # 1. Targeted or Automated Room Selection
+        query = params.get('query')
+        rooms = []
+        
+        if query and 'tryhackme' in query.lower():
+            # Extract room name from query (simple heuristic)
+            # Query might be "TryHackMe Masquerade writeup" -> "Masquerade"
+            room_search = query.replace('TryHackMe', '').replace('writeup', '').replace('walkthrough', '').strip()
+            if room_search:
+                logger.info(f"Searching for specific room: {room_search}")
+                # We can't easily search via API here without knowing the exact URL, 
+                # but we can try to guess or use DuckDuckGo to find the URL
+                # For now, let's see if it's already in our CSV
+                if os.path.exists('thm_rooms.csv'):
+                    with open('thm_rooms.csv', 'r', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        for r in reader:
+                            if room_search.lower() in r['name'].lower():
+                                rooms.append(r)
+                                break
+                
+                if not rooms:
+                    # If not in CSV, we could search THM directly, but for now we'll 
+                    # just proceed with automated scraping to find it
+                    logger.info(f"Room '{room_search}' not in cache. Starting automated scrape...")
+                    rooms = scraper.scrape_rooms()
+            else:
+                rooms = scraper.scrape_rooms()
+        else:
+            logger.info("Starting automated room scraping (Newest + Medium/Hard/Insane)...")
+            rooms = scraper.scrape_rooms()
+
         if rooms:
             scraper.save_rooms_to_csv(rooms)
-            logger.info(f"Scraping complete. Total rooms found: {len(rooms)}")
+            logger.info(f"Total rooms available for processing: {len(rooms)}")
         else:
             if os.path.exists('thm_rooms.csv'):
-                logger.warning("Scraping returned no results, using existing thm_rooms.csv")
+                logger.warning("Scraping returned no new results, using existing thm_rooms.csv")
+                with open('thm_rooms.csv', 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    rooms = list(reader)
             else:
                 return {'status': False, 'summary': "No rooms found and no existing cache."}
         
@@ -539,7 +580,9 @@ def run(params):
             logger.info(f"[{processed_count + 1}/{max_rooms}] Analyzing room: {selected_room['name']}")
             
             try:
-                writeup_urls, is_premium = scraper.find_writeup_urls(selected_room['name'], selected_room['url'])
+                writeup_info = scraper.find_writeup_urls(selected_room['name'], selected_room['url'])
+                writeup_urls = writeup_info["all_urls"]
+                is_premium = writeup_info["is_premium"]
                 
                 if not writeup_urls:
                     if is_premium:
@@ -554,11 +597,15 @@ def run(params):
                 
                 # Store found links in CSV room data
                 selected_room['writeup_links'] = ";".join(writeup_urls)
+                selected_room['github_links'] = ";".join(writeup_info["github"])
+                selected_room['medium_links'] = ";".join(writeup_info["medium"])
+                selected_room['youtube_links'] = ";".join(writeup_info["youtube"])
                 scraper.save_rooms_to_csv(rooms)
                 
-                best_data = None
+                best_data_list = [] # Store all successful parses
+                
+                # Process URLs in priority order
                 for url in writeup_urls:
-                    text = ""
                     try:
                         if ("youtube.com" in url or "youtu.be" in url) and AdvancedYTScraper:
                             logger.info(f"Using AdvancedYTScraper for YouTube: {url}")
@@ -567,38 +614,49 @@ def run(params):
                             os.makedirs(yt_output, exist_ok=True)
                             
                             yt_scraper = AdvancedYTScraper(output_dir=yt_output)
-                            yt_results = yt_scraper.run(url, max_duration=None)
+                            # Return chunked results (default 2 mins)
+                            yt_chunks = yt_scraper.run(url, max_duration=None, chunk_interval=180) # 3 min chunks
                             
-                            if yt_results:
-                                text = "\n---\n".join([f"Timestamp: {r['timestamp']}s\n{r['ocr_text']}" for r in yt_results])
-                                logger.info(f"Captured {len(yt_results)} frames from YouTube.")
+                            if yt_chunks:
+                                logger.info(f"Captured {len(yt_chunks)} chunks from YouTube. Processing each...")
+                                for chunk in yt_chunks:
+                                    text = f"Walkthrough Chunk [{chunk['start_time']:.0f}s - {chunk['end_time']:.0f}s]:\n{chunk['combined_text']}"
+                                    parsed = scraper.parse_writeup_with_llm(text)
+                                    if parsed and len(parsed.get('instruction', [])) >= 1:
+                                        best_data_list.append(parsed)
                             else:
                                 logger.warning("YouTube scraper returned no results.")
                                 
-                        elif "freedium-mirror.cfd" in url and FreediumScraper:
+                        elif ("medium.com" in url or "freedium" in url) and FreediumScraper:
                             logger.info(f"Using FreediumScraper for: {url}")
                             f_scraper = FreediumScraper()
-                            medium_url = url.replace("https://freedium-mirror.cfd/", "")
-                            text = f_scraper.scrape(medium_url)
+                            # Strip freedium prefix if present for the scraper's internal logic if needed
+                            target_url = url.split("freedium-mirror.cfd/")[-1] if "freedium" in url else url
+                            text = f_scraper.scrape(target_url)
+                            if text:
+                                parsed = scraper.parse_writeup_with_llm(text)
+                                if parsed and len(parsed.get('instruction', [])) >= 2:
+                                    best_data_list.append(parsed)
                         else:
                             text = scraper.extract_writeup_text(url)
+                            if text:
+                                parsed = scraper.parse_writeup_with_llm(text)
+                                if parsed and len(parsed.get('instruction', [])) >= 2:
+                                    best_data_list.append(parsed)
                     except Exception as scrape_err:
                         logger.error(f"Failed to extract text from {url}: {scrape_err}")
                         continue
 
-                    if not text or len(text) < 200:
-                        continue
-                        
-                    parsed = scraper.parse_writeup_with_llm(text)
-                    if parsed and len(parsed.get('instruction', [])) >= 2:
-                        best_data = parsed
+                    # If we found data from a high-priority source, we can stop searching for this room
+                    if best_data_list:
                         break
                 
-                if best_data:
-                    formatted = format_cyber_data(best_data)
+                if best_data_list:
                     with open(output_file, 'a', encoding='utf-8') as f:
-                        for text in formatted['text']:
-                            f.write(json.dumps({'text': text, 'room': selected_room['name']}) + '\n')
+                        for data in best_data_list:
+                            formatted = format_cyber_data(data)
+                            for text in formatted['text']:
+                                f.write(json.dumps({'text': text, 'room': selected_room['name']}) + '\n')
                     processed_count += 1
                     logger.info(f"Successfully added {selected_room['name']} to dataset. ({processed_count}/{max_rooms})")
                 else:

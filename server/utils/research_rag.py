@@ -537,13 +537,28 @@ class ResearchRAG:
         if source_type:
             final_where["source_type"] = source_type
         
-        # Query ChromaDB
-        results = self._collection.query(
-            query_texts=[query],
-            n_results=limit * 3,  # Get more, then filter and boost
-            where=final_where if final_where else None,
-            include=["documents", "metadatas", "distances"],
-        )
+        # Query ChromaDB with retry for transient internal errors
+        import time
+        max_retries = 3
+        results = None
+        for attempt in range(max_retries):
+            try:
+                results = self._collection.query(
+                    query_texts=[query],
+                    n_results=limit * 3,  # Get more, then filter and boost
+                    where=final_where if final_where else None,
+                    include=["documents", "metadatas", "distances"],
+                )
+                break
+            except Exception as e:
+                if "Internal error" in str(e) and attempt < max_retries - 1:
+                    logger.warning(f"ChromaDB InternalError (attempt {attempt+1}), retrying in 2s...")
+                    time.sleep(2)
+                    continue
+                raise
+        
+        if not results:
+            return []
         
         # Process results
         search_results = []
