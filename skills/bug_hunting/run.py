@@ -43,7 +43,6 @@ try:
     _PLATFORM_SCANNER_AVAILABLE = True
 except ImportError:
     _PLATFORM_SCANNER_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -700,7 +699,6 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                     "result": {},
                 }
             return run_platform_scan(params)
-
         return {
             "status": False,
             "summary": f"Unknown action '{action}'.",
