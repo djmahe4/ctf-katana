@@ -21,7 +21,7 @@ class TestRegistry:
             "purple-loop-orchestrator", "recon", "research-agent",
             "research-rag", "research-swarm", "research-youtube-ocr",
             "reverse", "reverse_engineering", "script_writer", "stego_solver",
-            "superpowers", "vuln-discovery", "web", "web3-analyzer",
+            "superpowers", "tryhackme", "vuln-discovery", "web", "web3-analyzer",
             "web_exploit (DEPRECATED)", "windows-exploitation",
             "writeup_generator"
         }

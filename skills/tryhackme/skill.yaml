@@ -1,0 +1,23 @@
+name: tryhackme
+description: Scrapes TryHackMe rooms for writeups and parses them with LLM to generate CTF training data.
+inputs:
+  - name: email
+    description: TryHackMe account email
+    required: false
+  - name: password
+    description: TryHackMe account password
+    required: false
+  - name: query
+    description: Optional search query for specific rooms
+    required: false
+  - name: max_rooms
+    description: Maximum number of rooms to process
+    required: false
+    default: 3
+tools:
+  - DrissionPage
+  - BeautifulSoup
+  - requests
+  - ollama
+category: research
+agent: true

@@ -34,6 +34,14 @@ except ImportError:
     logger.warning("FreediumScraper not found in skills. Falling back to basic logic.")
     FreediumScraper = None
 
+def check_ollama_health():
+    """Checks if Ollama is running and responsive."""
+    try:
+        response = requests.get('http://localhost:11434/api/tags', timeout=2)
+        return response.status_code == 200
+    except:
+        return False
+
 def format_cyber_data(examples):
     """Formats the data into the official Gemma 4 Instruct template."""
     instructions = examples.get("instruction", [])
@@ -433,7 +441,7 @@ class TryHackMeScraper:
             try:
                 response = requests.get(raw_url, timeout=10)
                 response.raise_for_status()
-                return response.text[:100000]
+                return response.text
             except Exception as e:
                 logger.warning(f"Failed to fetch raw GitHub content: {e}. Falling back to browser extraction.")
 
@@ -447,25 +455,30 @@ class TryHackMeScraper:
         lines = (line.strip() for line in text.splitlines())
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         text = '\n'.join(chunk for chunk in chunks if chunk)
-        return text[:100000]
+        return text
 
-    def parse_writeup_with_llm(self, text):
-        logger.info("Parsing writeup with LLM...")
+    def parse_writeup_with_llm(self, text, previous_context=None):
+        logger.info(f"Parsing writeup segment with LLM (Context Aware: {bool(previous_context)})...")
+        
+        context_str = f"\nPREVIOUSLY EXTRACTED STEPS SUMMARY:\n{previous_context}\n" if previous_context else ""
+        
         prompt = f"""
-        Analyze this TryHackMe room writeup and extract the core steps as instruction-output pairs.
-        Each 'instruction' should describe a task or phase (e.g., 'Enumerate open ports', 'Exploit the web application').
-        The 'output' should provide the detailed explanation or commands used in that step.
-
-        CRITICAL: Your response must be a SINGLE valid JSON object. 
-        Escape all double quotes within the strings. Do not include any text before or after the JSON.
-
-        WRITEUP CONTENT:
+        Analyze this segment of a TryHackMe room walkthrough and extract the core technical steps.
+        {context_str}
+        
+        NEW SEGMENT CONTENT:
         {text}
+
+        TASK:
+        1. Identify new commands, flags, or exploitation steps in this segment.
+        2. Combine them with the context of what was found previously.
+        3. Ensure no technical detail is lost.
+        4. Output as a SINGLE valid JSON object.
 
         Output format (JSON):
         {{
-            "instruction": ["step 1 description", "step 2 description"],
-            "output": ["step 1 details/commands", "step 2 details/commands"]
+            "instruction": ["step description", "..."],
+            "output": ["detailed commands/output", "..."]
         }}
         """
         try:
@@ -490,7 +503,46 @@ class TryHackMeScraper:
                 return json.loads(json_str)
         except Exception as e:
             logger.error(f"LLM parsing failed: {e}")
-        return None
+            return None
+
+    def refine_and_compress_data(self, instructions, outputs):
+        """Final pass to remove redundancies while preserving all unique technical commands."""
+        logger.info("Performing final refinement/compression pass...")
+        content = ""
+        for i, (inst, out) in enumerate(zip(instructions, outputs)):
+            content += f"Step {i+1}: {inst}\nDetails: {out}\n\n"
+            
+        prompt = f"""
+        Review the following aggregated walkthrough steps. 
+        Consolidate any redundant steps while ensuring that EVERY unique command, flag, and exploitation detail is preserved.
+        
+        INPUT STEPS:
+        {content}
+        
+        Final Output format (JSON):
+        {{
+            "instruction": ["final step 1", "..."],
+            "output": ["final detailed commands 1", "..."]
+        }}
+        """
+        try:
+            response = requests.post(
+                'http://localhost:11434/api/chat',
+                json={
+                    "model": "mistral-nemo",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                },
+                timeout=300
+            )
+            response.raise_for_status()
+            res_content = response.json().get('message', {}).get('content', '')
+            json_match = re.search(r'(\{.*\})', res_content, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(1))
+        except Exception as e:
+            logger.error(f"Refinement pass failed: {e}")
+            return {"instruction": instructions, "output": outputs} # Return original if refinement fails
 
     def close(self):
         if self.page:
@@ -502,6 +554,11 @@ def run(params):
     
     if not email or not password:
         return {'status': False, 'summary': "Missing credentials. Set THM_EMAIL and THM_PASSWORD in .env"}
+    
+    # Check Ollama health first to avoid popups if we can't process data anyway
+    if not check_ollama_health():
+        logger.error("Ollama is not running. Aborting to avoid unnecessary browser interaction.")
+        return {'status': False, 'summary': "Ollama (LLM) is not running on localhost:11434. Start it to continue."}
     
     scraper = TryHackMeScraper(email, password)
     try:
@@ -618,12 +675,31 @@ def run(params):
                             yt_chunks = yt_scraper.run(url, max_duration=None, chunk_interval=180) # 3 min chunks
                             
                             if yt_chunks:
-                                logger.info(f"Captured {len(yt_chunks)} chunks from YouTube. Processing each...")
-                                for chunk in yt_chunks:
-                                    text = f"Walkthrough Chunk [{chunk['start_time']:.0f}s - {chunk['end_time']:.0f}s]:\n{chunk['combined_text']}"
-                                    parsed = scraper.parse_writeup_with_llm(text)
-                                    if parsed and len(parsed.get('instruction', [])) >= 1:
-                                        best_data_list.append(parsed)
+                                logger.info(f"Captured {len(yt_chunks)} chunks from YouTube. Processing live with context compression...")
+                                current_instructions = []
+                                current_outputs = []
+                                
+                                for i, chunk in enumerate(yt_chunks):
+                                    logger.info(f"Processing chunk {i+1}/{len(yt_chunks)} ({chunk['start_time']:.0f}s - {chunk['end_time']:.0f}s)")
+                                    text = f"Walkthrough Segment [{chunk['start_time']:.0f}s - {chunk['end_time']:.0f}s]:\n{chunk['combined_text']}"
+                                    
+                                    # Create a summary context for the next chunk
+                                    context_summary = ""
+                                    if current_instructions:
+                                        # Use last 3 steps as context to maintain flow without bloating prompt
+                                        last_steps = current_instructions[-3:]
+                                        context_summary = "Previous steps found: " + " -> ".join(last_steps)
+                                    
+                                    parsed = scraper.parse_writeup_with_llm(text, previous_context=context_summary)
+                                    if parsed:
+                                        current_instructions.extend(parsed.get('instruction', []))
+                                        current_outputs.extend(parsed.get('output', []))
+                                
+                                if current_instructions:
+                                    # Followup to include the entire walkthrough without missing a single second
+                                    refined = scraper.refine_and_compress_data(current_instructions, current_outputs)
+                                    if refined:
+                                        best_data_list.append(refined)
                             else:
                                 logger.warning("YouTube scraper returned no results.")
                                 
@@ -652,13 +728,19 @@ def run(params):
                         break
                 
                 if best_data_list:
-                    with open(output_file, 'a', encoding='utf-8') as f:
-                        for data in best_data_list:
-                            formatted = format_cyber_data(data)
+                    # Merge multiple sources if needed into a single room entry
+                    merged_data = {"instruction": [], "output": []}
+                    for data in best_data_list:
+                        merged_data["instruction"].extend(data.get("instruction", []))
+                        merged_data["output"].extend(data.get("output", []))
+                    
+                    if merged_data["instruction"]:
+                        with open(output_file, 'a', encoding='utf-8') as f:
+                            formatted = format_cyber_data(merged_data)
                             for text in formatted['text']:
                                 f.write(json.dumps({'text': text, 'room': selected_room['name']}) + '\n')
-                    processed_count += 1
-                    logger.info(f"Successfully added {selected_room['name']} to dataset. ({processed_count}/{max_rooms})")
+                        processed_count += 1
+                        logger.info(f"Successfully added {selected_room['name']} to dataset. ({processed_count}/{max_rooms})")
                 else:
                     logger.warning(f"Could not extract valid training data for {selected_room['name']}")
                 

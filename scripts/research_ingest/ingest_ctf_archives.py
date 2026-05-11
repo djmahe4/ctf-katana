@@ -267,83 +267,71 @@ class HybridCTFScraper:
         logger.info(f"Scraping YouTube transcript for {video_id} via Drission Tier...")
         
         # ---------------------------------------------------------
-        # TIER 1: youtube-transcript-api (Fast Primary)
-        # ---------------------------------------------------------
-        try:
-            from youtube_transcript_api import YouTubeTranscriptApi
-            
-            @backoff.on_exception(backoff.expo, (Exception,), max_tries=2, jitter=backoff.full_jitter)
-            def try_tier1(vid):
-                # Correct way to call get_transcript (it's a class method)
-                try:
-                    return YouTubeTranscriptApi.get_transcript(vid, languages=['en'])
-                except Exception as e:
-                    logger.debug(f"Tier 1 (get_transcript) failed: {e}")
-                    return None
-
-            transcript_data = try_tier1(video_id)
-            if transcript_data:
-                content = "\n".join([item['text'] for item in transcript_data])
-                return {
-                    "url": url,
-                    "title": page.title,
-                    "content": content[:35000],
-                    "type": "youtube_transcript",
-                    "extracted_method": "youtube_transcript_api"
-                }
-        except Exception as e:
-            logger.debug(f"TIER 1 skipped for {video_id}: {e}")
-
-        # ---------------------------------------------------------
         # DRISSION TIER: Network Interception (High Fidelity)
         # ---------------------------------------------------------
         try:
             # Start listening for the timedtext JSON
             page.listen.start('timedtext')
             
-            # Nav with CC load policy forced
-            yt_url = f"https://www.youtube.com/watch?v={video_id}&cc_load_policy=1"
+            # Nav with CC load policy forced and autoplay disabled
+            yt_url = f"https://www.youtube.com/watch?v={video_id}&cc_load_policy=1&autoplay=0"
             logger.info(f"Navigating to {yt_url}...")
             page.get(yt_url)
             
-            # Sometimes we need to click the CC button to trigger the network request
-            try:
-                # Wait a bit for the player to load
-                page.wait(2)
-                cc_button = page.ele('@aria-label=Subtitles/closed captions', timeout=3)
-                if cc_button:
-                    logger.info("Clicking CC button to trigger transcript...")
-                    cc_button.click()
-            except:
-                pass
-
-            # Wait for any timedtext response
-            res = page.listen.wait(timeout=15)
-            if res:
-                # Capture and parse the JSON directly
-                try:
-                    # In some versions of DrissionPage, body is already decoded or needs res.response.body
-                    body = res.response.body
-                    if isinstance(body, bytes):
-                        body = body.decode('utf-8')
-                    data = json.loads(body)
-                    
-                    transcript_segments = []
-                    for event in data.get('events', []):
-                        if 'segs' in event:
-                            transcript_segments.append("".join(s.get('utf8', '') for s in event['segs']))
-                    
-                    full_text = " ".join(transcript_segments)
-                    if full_text.strip():
-                        return {
-                            "url": url,
-                            "title": page.title,
-                            "content": full_text[:35000],
-                            "type": "youtube_transcript",
-                            "extracted_method": "drission_page_network"
-                        }
-                except Exception as je:
-                    logger.warning(f"Failed to parse Drission intercepted JSON: {je}")
+            # Wait for any timedtext response (increased timeout for long videos)
+            # We look for the first 30 seconds of video to ensure transcript fires
+            timeout = 30
+            start_wait = time.time()
+            all_packets = []
+            
+            while time.time() - start_wait < timeout:
+                res = page.listen.wait(timeout=5)
+                if res and 'timedtext' in res.url:
+                    all_packets.append(res)
+                    logger.info(f"Captured transcript packet: {res.url[:50]}...")
+                    # Usually the first packet is enough for the whole transcript if it's the player's initial request
+                    break
+                
+                # Try to trigger CC if not firing
+                if time.time() - start_wait > 10:
+                    try:
+                        cc_button = page.ele('@aria-label=Subtitles/closed captions', timeout=2)
+                        if cc_button:
+                            logger.info("Clicking CC button to trigger transcript...")
+                            cc_button.click()
+                    except:
+                        pass
+            
+            if all_packets:
+                full_text_segments = []
+                for res in all_packets:
+                    try:
+                        body = res.response.body
+                        if isinstance(body, (str, bytes)):
+                            if isinstance(body, bytes):
+                                body = body.decode('utf-8')
+                            data = json.loads(body)
+                        elif isinstance(body, dict):
+                            data = body
+                        else:
+                            logger.warning(f"Unknown body type: {type(body)}")
+                            continue
+                        
+                        for event in data.get('events', []):
+                            if 'segs' in event:
+                                full_text_segments.append("".join(s.get('utf8', '') for s in event['segs']))
+                    except Exception as je:
+                        logger.warning(f"Failed to parse Drission intercepted JSON: {je}")
+                
+                full_text = " ".join(full_text_segments)
+                if full_text.strip():
+                    return {
+                        "url": url,
+                        "title": page.title,
+                        "content": full_text[:35000],
+                        "type": "youtube_transcript",
+                        "extracted_method": "drission_page_network"
+                    }
             else:
                 logger.warning(f"Drission Tier timed out waiting for 'timedtext' for {video_id}")
         except Exception as de:

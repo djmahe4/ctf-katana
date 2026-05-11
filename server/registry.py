@@ -112,6 +112,7 @@ def discover_skills(skills_dir: Optional[Path] = None) -> Dict[str, Skill]:
         # Loader (run.py)
         run_py = child / "run.py"
         if not run_py.exists():
+            logger.warning(f"Skill at {child} has skill.yaml but is missing run.py. Skipping.")
             continue
             
         try:
@@ -131,6 +132,7 @@ def discover_skills(skills_dir: Optional[Path] = None) -> Dict[str, Skill]:
                     spec.loader.exec_module(module)
                     run_fn = getattr(module, "run", None)
                 else:
+                    logger.error(f"Failed to create spec or loader for {run_py}")
                     continue
 
             if run_fn:
@@ -140,8 +142,10 @@ def discover_skills(skills_dir: Optional[Path] = None) -> Dict[str, Skill]:
                     run=run_fn,
                     directory=child
                 )
+            else:
+                logger.error(f"Skill at {child} is missing a 'run' function in run.py")
         except Exception as e:
-            logger.error(f"Failed to load skill at {child}: {e}")
+            logger.exception(f"Failed to load skill at {child} due to unexpected error: {e}")
             continue
 
     return skills

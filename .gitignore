@@ -51,4 +51,6 @@ test_output.txt
 tests_output.txt
 thm_dataset.jsonl
 timp.py
-tmp/
+tmp/*
+logs/telemetry.json
+outputs/*
