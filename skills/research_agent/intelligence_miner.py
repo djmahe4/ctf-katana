@@ -7,7 +7,8 @@ from pathlib import Path
 from datetime import datetime
 
 from server.utils.research_rag import ResearchRAG
-from skills.research_chrome_scraper.scraper import ChromeScraper, fetch_raw_json
+from skills.research_chrome_scraper.scraper import ChromeScraper, fetch_raw_json, fetch_raw_text
+from skills.research_agent.git_miner import GitDiffParser
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class IntelligenceMiner:
         self.rag = rag or ResearchRAG(persist_directory=os.environ.get("KATANA_RAG_DIR", "data/research_db"))
         self.workspace_root = Path(workspace_root or os.getcwd())
         self.scraper = ChromeScraper(cache_path=str(self.workspace_root / "cve_cache.json"))
+        self.diff_parser = GitDiffParser()
         
         # High value domains for exploit/patch code
         self.high_value_domains = [
@@ -71,17 +73,99 @@ class IntelligenceMiner:
         logger.info(f"⛏️  Starting deep mining for {cve_id} (max_depth={max_depth})...")
         intelligence = []
         visited = {github_link}
+        result = {
+            "cve_id": cve_id,
+            "intelligence_count": 0,
+            "references_scraped": 0,
+            "status": True,
+            "is_grounded": False,
+            "logic_hint": None
+        }
         
         # 1. Fetch Raw CVE JSON from GitHub
         cve_data = fetch_raw_json(github_link)
         if not cve_data:
             return {"status": "error", "message": "Failed to fetch CVE JSON"}
             
-        # 2. Extract References
+        # 2. Extract References and Git Intelligence
         references = self._extract_references(cve_data)
-        logger.info(f"Found {len(references)} references for {cve_id}")
+        git_intelligence = self._extract_git_intelligence(cve_data)
+        logger.info(f"Found {len(references)} references and {len(git_intelligence)} git targets for {cve_id}")
+
+        # 3. Process Git Intelligence (Direct Patch Mining)
+        for git_info in git_intelligence:
+            repo_url = git_info.get("repo")
+            program_files = git_info.get("programFiles", [])
             
-        # 3. Filter and Rank High-Value URLs
+            # Extract unique fix hashes from versions
+            fix_hashes = []
+            for v in git_info.get("versions", []):
+                # Status 'affected' usually means the 'lessThan' version is the fix
+                fh = v.get("lessThan") or v.get("lessThanOrEqual")
+                if fh and len(fh) >= 7 and v.get("status") == "affected":
+                    if fh not in fix_hashes:
+                        fix_hashes.append(fh)
+            
+            if not fix_hashes:
+                logger.info(f"No clear fix hashes found for {repo_url}")
+                continue
+                
+            logger.info(f"🚀 Processing {len(fix_hashes)} potential fix commits for {repo_url}...")
+            
+            # Limit to top 5 unique hashes to avoid redundancy
+            for fix_hash in fix_hashes[:5]:
+                patch_url = self.diff_parser.get_patch_url(repo_url, fix_hash)
+                if not patch_url:
+                    continue
+                    
+                logger.info(f"🚀 Fetching and observing patch from {patch_url}")
+                try:
+                    # Use fetch_raw_text for patch files (they are not JSON)
+                    patch_content = fetch_raw_text(patch_url) if "patch" in patch_url else None
+                    if not patch_content:
+                        # Fallback to standard scraper
+                        async with self.scraper as s:
+                            p_info = await s.fetch_advisory(patch_url)
+                            patch_content = p_info.get("description", "")
+                    
+                    if patch_content and "---" in patch_content:
+                        # Parse and filter for the specific program files
+                        file_diffs = self.diff_parser.parse_patch(patch_content, filter_files=program_files)
+                        
+                        if file_diffs:
+                            logger.info(f"🔍 Observed {len(file_diffs)} relevant file changes in patch ({fix_hash})")
+                            analysis = self.diff_parser.analyze_logic_change(file_diffs)
+                            
+                            # Store the targeted intelligence
+                            targeted_content = f"--- PATCH ANALYSIS ---\n{analysis}\n\n--- FILTERED DIFF ---\n"
+                            targeted_content += "\n".join(file_diffs.values())
+                            
+                            self.rag.add_document(
+                                content=targeted_content,
+                                source="git_diff_observer",
+                                source_type="git_patch",
+                                title=f"Targeted Git Patch for {cve_id} ({fix_hash})",
+                                url=patch_url,
+                                metadata={
+                                    "cve_id": cve_id,
+                                    "purpose": "patch",
+                                    "is_git_diff": True,
+                                    "repo": repo_url,
+                                    "commit": fix_hash,
+                                    "affected_files": list(file_diffs.keys()),
+                                    "observation_summary": analysis
+                                }
+                            )
+                            intelligence.append({"url": patch_url, "type": "patch", "content": targeted_content})
+                            
+                            # Mark as grounded for initial results
+                            if not result.get("is_grounded"):
+                                result["is_grounded"] = True
+                                result["logic_hint"] = analysis
+                except Exception as e:
+                    logger.warning(f"Failed to observe patch {fix_hash}: {e}")
+
+        # 4. Filter and Rank High-Value URLs from references
         hv_urls = [url for url in references if any(domain in url.lower() for domain in self.high_value_domains)]
         hv_urls = self._rank_urls(hv_urls)
         logger.info(f"Ranked high-value matches: {len(hv_urls)}")
@@ -182,12 +266,9 @@ class IntelligenceMiner:
                             for snippet in s_snippets:
                                 intelligence.append({"url": raw_url, "type": "patch", "content": snippet})
                     
-        return {
-            "cve_id": cve_id,
-            "intelligence_count": len(intelligence),
-            "references_scraped": len(hv_urls[:7]),
-            "status": True
-        }
+        result["intelligence_count"] = len(intelligence)
+        result["references_scraped"] = len(hv_urls[:7])
+        return result
 
     def _extract_references(self, cve_data: Dict[str, Any]) -> List[str]:
         """Extracts URLs from CVE JSON structure."""
@@ -201,6 +282,24 @@ class IntelligenceMiner:
         except Exception as e:
             logger.error(f"Error extracting references: {e}")
         return urls
+
+    def _extract_git_intelligence(self, cve_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extracts git repo and version info from 'affected' section."""
+        git_intel = []
+        try:
+            affected_list = cve_data.get("containers", {}).get("cna", {}).get("affected", [])
+            for affected in affected_list:
+                repo = affected.get("repo")
+                if repo and ("git" in repo.lower() or "github" in repo.lower() or "gitlab" in repo.lower()):
+                    git_intel.append({
+                        "repo": repo,
+                        "product": affected.get("product"),
+                        "programFiles": affected.get("programFiles", []),
+                        "versions": affected.get("versions", [])
+                    })
+        except Exception as e:
+            logger.error(f"Error extracting git intelligence: {e}")
+        return git_intel
 
     def _extract_code_snippets(self, text: str) -> List[str]:
         """

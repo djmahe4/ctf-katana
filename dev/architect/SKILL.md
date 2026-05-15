@@ -9,8 +9,8 @@ This skill guides the evolution of the **ctf-katana** orchestration engine. It e
 
 ## Context Anchors
 
-- **Canonical Guide**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
-- **Architecture Source**: [Level 3.5: Agentic Security Hardening](docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
+- **Canonical Guide**: [MIGRATION_GUIDE.md](../../docs/MIGRATION_GUIDE.md)
+- **Architecture Source**: [Level 3.5: Agentic Security Hardening](../../docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
 
 ## Orchestration Flow
 

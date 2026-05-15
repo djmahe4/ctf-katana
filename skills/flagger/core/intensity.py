@@ -45,19 +45,48 @@ class IntensityArchitect:
     def harden_flag(self, flag: str, level: str = "moderate") -> HardenedPayload:
         """Harden the flag based on the preset level."""
         preset = self.get_preset(level)
-        current_val = flag
-        logic_steps = []
         
-        # Apply obfuscation chain
-        for step in reversed(preset["chain"]):
-            obf = self.obfuscators.get(step)
-            if obf:
-                current_val = obf.encrypt(current_val)
-                logic_steps.append(obf.decrypt_logic("flag"))
+        # Determine split count based on level
+        num_parts = 1
+        if level == "difficult": num_parts = 3
+        elif level == "expert": num_parts = 5
+        
+        # Split flag into parts
+        part_len = max(1, len(flag) // num_parts)
+        flag_segments = [flag[i:i+part_len] for i in range(0, len(flag), part_len)]
+        
+        flag_parts = []
+        all_logic = []
+        
+        # Map human-friendly names to internal variable IDs for reconstruction
+        # e.g., _0x1, _0x2...
+        
+        for idx, segment in enumerate(flag_segments):
+            current_val = segment
+            logic_steps = []
+            var_name = f"_0x{idx+1:x}"
+            
+            # Apply obfuscation chain to each part
+            for step in preset["chain"]:
+                obf = self.obfuscators.get(step)
+                if obf:
+                    current_val = obf.encrypt(current_val)
+                    logic_steps.insert(0, obf.decrypt_logic(var_name))
+            
+            flag_parts.append(FlagPart(original=segment, transformed=current_val, order=idx))
+            # Prepend the assignment
+            part_logic = [f"{var_name} = '{current_val}'"] + logic_steps
+            all_logic.append("\n".join(part_logic))
+
+        # Final reconstruction logic
+        reconstruction = "\n".join(all_logic)
+        final_var = f"_0x{len(flag_segments)+1:x}"
+        merge_parts = " + ".join([f"_0x{i+1:x}" for i in range(len(flag_segments))])
+        reconstruction += f"\n{final_var} = {merge_parts}\nflag = {final_var}"
 
         obf_result = ObfuscationResult(
-            flag_parts=[FlagPart(original=flag, transformed=current_val, order=0)],
-            reconstruction_logic="\n".join(logic_steps),
+            flag_parts=flag_parts,
+            reconstruction_logic=reconstruction,
             intensity=level
         )
         

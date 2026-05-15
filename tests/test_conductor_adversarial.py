@@ -6,7 +6,13 @@ from server.utils.review_manager import ReviewStatus
 @pytest.fixture
 def mock_deps():
     memory = MagicMock()
-    memory.state = {"last_step": "hardening_complete", "session_id": "test_session"}
+    # chaos_level > 0.3 so superpowers is invoked; ai_hardening explicit
+    memory.state = {
+        "last_step": "hardening_complete",
+        "session_id": "test_session",
+        "ai_hardening": "standard",
+        "chaos_level": 0.5,
+    }
     memory.get_context.return_value = {"name": "test_challenge", "category": "web"}
     memory.is_approved.return_value = False
     
@@ -47,13 +53,63 @@ async def test_conductor_merger_to_superpowers_transition(mock_deps):
                 memory.transition.assert_called_with("merger_complete")
                 reviewer.request_review.assert_called() # Merger layout review
                 
-                # Test _run_superpowers
+                # Test _run_superpowers with ai_hardening=standard (satisfies invocation condition)
                 memory.state["last_step"] = "merger_complete"
                 await conductor._run_superpowers()
                 
                 memory.transition.assert_called_with("superpowers_complete")
                 # Should have requested review for adversarial strategy
                 assert reviewer.request_review.call_count >= 2
+
+@pytest.mark.asyncio
+async def test_conductor_superpowers_skipped_when_condition_not_met(mock_deps):
+    """Verify superpowers is skipped when ai_hardening=none and chaos_level<=0.3."""
+    memory, reviewer, registry = mock_deps
+    # Override to NOT meet invocation condition
+    memory.state["ai_hardening"] = "none"
+    memory.state["chaos_level"] = 0.0
+
+    conductor = PipelineConductor(
+        target="CVE-2024-TEST",
+        memory=memory,
+        reviewer=reviewer,
+        knowledge_registry=registry,
+        workspace_root=".",
+        interactive=True,
+    )
+
+    with patch.object(conductor.dispatcher, 'prepare_params', new_callable=AsyncMock):
+        await conductor._run_superpowers()
+
+    # Must still transition so the pipeline can continue
+    memory.transition.assert_called_with("superpowers_complete")
+    # No review should have been requested (skipped entirely)
+    reviewer.request_review.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_conductor_superpowers_invoked_by_chaos_level(mock_deps):
+    """Verify superpowers runs when chaos_level > 0.3 even if ai_hardening=none."""
+    memory, reviewer, registry = mock_deps
+    memory.state["ai_hardening"] = "none"
+    memory.state["chaos_level"] = 0.5  # > 0.3 → invoke
+
+    conductor = PipelineConductor(
+        target="CVE-2024-TEST",
+        memory=memory,
+        reviewer=reviewer,
+        knowledge_registry=registry,
+        workspace_root=".",
+        interactive=True,
+    )
+
+    with patch.object(conductor.dispatcher, 'prepare_params', new_callable=AsyncMock) as mock_prep:
+        mock_prep.return_value = {"strategy": {"name": "chaos-run"}}
+        with patch("skills.superpowers.run.run") as mock_sp:
+            mock_sp.return_value = {"status": True, "result": {"challenge": {}}}
+            await conductor._run_superpowers()
+
+    reviewer.request_review.assert_called_once()  # adversarial strategy review
+    memory.transition.assert_called_with("superpowers_complete")
 
 @pytest.mark.asyncio
 async def test_conductor_hitl_rejection(mock_deps):
@@ -73,7 +129,7 @@ async def test_conductor_hitl_rejection(mock_deps):
     with patch.object(conductor.dispatcher, 'prepare_params', new_callable=AsyncMock) as mock_prep:
         mock_prep.return_value = {"strategy": {"name": "Rejected"}}
         
-        # Test superpowers rejection
+        # Test superpowers rejection (ai_hardening=standard meets invocation condition)
         await conductor._run_superpowers()
         
         # Should transition to complete but log bypass/rejection (current logic transitions anyway or logs)

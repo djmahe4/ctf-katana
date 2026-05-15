@@ -437,6 +437,54 @@ def recon_dig(domain: str, record_type: str = "ANY") -> str:
 
 
 # ===================================================================
+# MCP Tools – Bug Hunting & Script Writing (Purple Engine)
+# ===================================================================
+
+@mcp.tool()
+def bug_hunt(target: str, action: str = "full_pipeline", depth: str = "medium") -> str:
+    """
+    Perform a bug bounty / vulnerability hunt on a target.
+    Actions: full_pipeline, subdomain_enum, port_scan, url_collect, vuln_scan, platform_scan.
+    """
+    skill = _skills.get("bug_hunting")
+    if skill and skill.run:
+        try:
+            return json.dumps(skill.run({"target": target, "action": action, "depth": depth}), default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+    return json.dumps({"error": "bug_hunting skill not loaded"})
+
+
+@mcp.tool()
+def script_write(action: str = "generate_report", workspace: str = "", target: str = "") -> str:
+    """
+    Generate reports, parse recon logs, or author scripts (exploit/tamper).
+    Actions: generate_report, parse_recon, write_tamper, analyze_js, validate_oob, full_pipeline.
+    """
+    skill = _skills.get("script_writer")
+    if skill and skill.run:
+        try:
+            return json.dumps(skill.run({"action": action, "workspace": workspace, "target": target}), default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+    return json.dumps({"error": "script_writer skill not loaded"})
+
+
+@mcp.tool()
+def tryhackme_research(query: str = "", max_rooms: int = 3) -> str:
+    """
+    Scrape TryHackMe for writeups and generate training data.
+    """
+    skill = _skills.get("tryhackme")
+    if skill and skill.run:
+        try:
+            return json.dumps(skill.run({"query": query, "max_rooms": max_rooms}), default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+    return json.dumps({"error": "tryhackme skill not loaded"})
+
+
+# ===================================================================
 # MCP Tools – Agent Orchestration (async, Ollama-backed)
 # ===================================================================
 

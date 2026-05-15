@@ -37,3 +37,50 @@ class ReverseRunResult(BaseModel):
     findings: List[ReverseFinding] = []
     artifacts: List[str] = []
     statistics: Dict[str, Any] = {}
+
+
+# ── SOLVE output contract ─────────────────────────────────────────────────────
+
+class SolverInfo(BaseModel):
+    """Describes the generated solver script."""
+    type: str = Field(
+        default="python",
+        description="Solver type: pwntools | python | bash | web3",
+    )
+    path: str = Field(
+        default="outputs/reverse/solver.py",
+        description="Relative path to the solver script.",
+    )
+    validated: bool = Field(
+        default=False,
+        description="Whether the solver was validated by flagger.verify().",
+    )
+
+
+class SolveOutputContract(BaseModel):
+    """
+    Strict output contract for SOLVE mode (Mode A).
+
+    Schema
+    ------
+    {
+        "status": true,
+        "summary": "...",
+        "result": {
+            "flag": "CTF{...}",
+            "solver": {
+                "type": "pwntools|python|bash|web3",
+                "path": "outputs/reverse/solver.py",
+                "validated": true
+            },
+            "findings": [...],
+            "artifacts": [...],
+            "writeup": "outputs/reverse/writeup.md"
+        }
+    }
+    """
+    flag: Optional[str] = None
+    solver: SolverInfo = Field(default_factory=SolverInfo)
+    findings: List[Dict[str, Any]] = []
+    artifacts: List[str] = []
+    writeup: str = "outputs/reverse/writeup.md"

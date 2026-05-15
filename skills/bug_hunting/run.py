@@ -1,13 +1,37 @@
-"""Bug Hunting skill – Purple Engine 6-step loop for web vulnerability discovery.
+"""Bug Hunting skill – 5-Pillar Bug Bounty Roadmap (AI-Augmented Purple Engine).
 
-Pipeline stages
----------------
-1. Analyze   – Validate and characterise the target.
-2. Search KB – Query the local knowledge base for target-specific context.
-3. Plan      – Build the shell pipeline that will be executed.
-4. Execute   – Run subprocesses for each stage (subdomain → port → URL → vuln).
-5. Interpret – Parse raw output and classify findings by severity.
-6. Report    – Return a structured result dictionary.
+Based on the methodology from "The Bug Bounty Roadmap I'd Follow If I Started Over (With AI)".
+
+Pillar 1 – Foundations
+    Prerequisite knowledge: HTTP, OWASP Top 10, Burp/Caido interception.
+    Bug classes to master first: IDOR, XSS (especially Blind XSS), Broken Access Control.
+
+Pillar 2 – Learning Loop  (action='learning_loop')
+    Read-Ask-Quiz-Apply loop. Paste writeups into AI, ask for explanations,
+    follow-up questions, quizzes, and similar challenges. AI is a tutor, not a substitute.
+
+Pillar 3 – Recon & Target Selection  (action='recon' or 'subdomain_enum' / 'port_scan' / 'url_collect')
+    Tool stack: subfinder → httpx → alterx (non-negotiable backbone).
+    AI use-cases:
+      - Categorise subdomain lists by function (auth / admin / API / internal).
+      - Generate payload variations for custom auth flows.
+      - Write custom recon scripts via precise specification.
+    Target selection: wide scope, newer programs, messy attack surfaces.
+
+Pillar 4 – The Hunt  (action='feature_map' | 'request_analysis' | 'js_review' | 'vuln_scan')
+    Piece 1  – Feature mapping: describe the app to the LLM, get a prioritised bug-class hit list.
+    Piece 2  – Request analysis: intercept in Burp/Caido, paste to LLM, get parameter tamper guidance.
+    Piece 3  – JS / code review: feed client-side JS or open-source components, extract all API calls.
+    AI finds the map; the hunter makes the calls.
+
+Pillar 5 – Reporting & Growth  (action='report_assist' | 'feedback_loop')
+    - Describe bug class → AI writes impact statement (no raw payload needed).
+    - Paste sanitised draft → AI critiques clarity, severity framing, triage readiness.
+    - After every bug (even N/A/dup): run the feedback loop to compound skill.
+    Key insight: report quality is the difference between $500 and $3 000 on the same finding.
+
+Full pipeline (action='full_pipeline'): Pillar 3 recon → Pillar 4 hunt → Pillar 5 report.
+HITL gate   (action='plan'): produces an approved plan before any execution.
 """
 
 from __future__ import annotations
@@ -35,6 +59,14 @@ try:
 except ImportError:
     KnowledgeBase = None  # type: ignore[assignment,misc]
 
+try:
+    from skills.bug_hunting.platform_scanner import (  # noqa: E402
+        PlatformScanner,
+        run_platform_scan,
+    )
+    _PLATFORM_SCANNER_AVAILABLE = True
+except ImportError:
+    _PLATFORM_SCANNER_AVAILABLE = False
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -65,6 +97,29 @@ class Finding:
 
 
 @dataclass
+class HitList:
+    """Prioritised attack surface produced by Pillar 3 recon."""
+
+    auth_subdomains: List[str] = field(default_factory=list)
+    admin_subdomains: List[str] = field(default_factory=list)
+    api_subdomains: List[str] = field(default_factory=list)
+    internal_subdomains: List[str] = field(default_factory=list)
+    marketing_subdomains: List[str] = field(default_factory=list)
+    other_subdomains: List[str] = field(default_factory=list)
+
+    def prioritised(self) -> List[str]:
+        """Return subdomains ordered from highest-value to lowest-value."""
+        return (
+            self.auth_subdomains
+            + self.admin_subdomains
+            + self.api_subdomains
+            + self.internal_subdomains
+            + self.marketing_subdomains
+            + self.other_subdomains
+        )
+
+
+@dataclass
 class HuntResult:
     """Aggregated result for a single hunt run."""
 
@@ -74,6 +129,7 @@ class HuntResult:
     subdomains: List[str] = field(default_factory=list)
     alive_hosts: List[str] = field(default_factory=list)
     urls: List[str] = field(default_factory=list)
+    hit_list: Optional[HitList] = None
     pipeline_log: List[str] = field(default_factory=list)
     summary: str = ""
 
@@ -511,6 +567,361 @@ def step_report(result: HuntResult) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Pillar 3 – AI-assisted subdomain categorisation (produces a HitList)
+# ---------------------------------------------------------------------------
+
+
+def step_categorise_subdomains(subdomains: List[str]) -> HitList:
+    """Pillar 3 – Categorise subdomains by likely function to produce a HitList.
+
+    This mirrors the video's workflow: paste subdomain list into AI and say
+    'Categorize these by likely function: auth, admin, API, internal, marketing'.
+    We do a keyword-heuristic version locally; the MCP tool can call an LLM on top.
+    """
+    hit = HitList()
+    _AUTH = re.compile(r"(auth|login|sso|oauth|iam|identity|account|password)", re.I)
+    _ADMIN = re.compile(r"(admin|manage|panel|backoffice|staff|cms|dashboard)", re.I)
+    _API = re.compile(r"(api|gateway|graphql|rest|grpc|v\d+)", re.I)
+    _INTERNAL = re.compile(r"(internal|dev|staging|qa|test|sandbox|corp|vpn)", re.I)
+    _MARKETING = re.compile(r"(blog|news|marketing|landing|promo|cdn|assets|static|media)", re.I)
+
+    for sd in subdomains:
+        if _AUTH.search(sd):
+            hit.auth_subdomains.append(sd)
+        elif _ADMIN.search(sd):
+            hit.admin_subdomains.append(sd)
+        elif _API.search(sd):
+            hit.api_subdomains.append(sd)
+        elif _INTERNAL.search(sd):
+            hit.internal_subdomains.append(sd)
+        elif _MARKETING.search(sd):
+            hit.marketing_subdomains.append(sd)
+        else:
+            hit.other_subdomains.append(sd)
+    return hit
+
+
+# ---------------------------------------------------------------------------
+# Pillar 4 – The Hunt: three pieces
+# ---------------------------------------------------------------------------
+
+
+def step_feature_map(features: str) -> Dict[str, Any]:
+    """Pillar 4, Piece 1 – Feature mapping.
+
+    The hunter walks through the app and describes it to the LLM.
+    Example: 'user dashboard, billing page, team management, admin panel I cannot access.'
+    Returns a structured list of prioritised bug classes and where to look.
+
+    Parameters
+    ----------
+    features:
+        Free-text description of the application's visible features.
+    """
+    bug_class_hints: List[str] = []
+    surfaces: List[str] = []
+
+    _TEAM_MGMT = re.compile(r"team\s*(manage|member|role|permission)", re.I)
+    _BILLING = re.compile(r"billing|payment|invoice|subscription", re.I)
+    _ADMIN = re.compile(r"admin\s*(panel|page|section|area)", re.I)
+    _UPLOAD = re.compile(r"(upload|file|attachment|import|export)", re.I)
+    _API_KEY = re.compile(r"api\s*key|webhook|integration|token", re.I)
+
+    if _TEAM_MGMT.search(features):
+        bug_class_hints.append("Broken Access Control (team roles – privilege escalation)")
+        surfaces.append("team management section")
+    if _BILLING.search(features):
+        bug_class_hints.append("IDOR (billing page – access other users' invoices)")
+        surfaces.append("billing / payment page")
+    if _ADMIN.search(features):
+        bug_class_hints.append("Broken Access Control (admin panel – unauthenticated access)")
+        surfaces.append("admin panel")
+    if _UPLOAD.search(features):
+        bug_class_hints.append("Unrestricted File Upload / Path Traversal")
+        surfaces.append("file upload endpoint")
+    if _API_KEY.search(features):
+        bug_class_hints.append("API key leakage / insecure webhook validation")
+        surfaces.append("API integrations page")
+
+    # Always suggest foundational checks
+    bug_class_hints += [
+        "IDOR (swap user IDs / resource IDs across accounts)",
+        "Blind XSS (inject into user-visible fields rendered by admin)",
+        "Auth bypass (manipulate JWT / session tokens)",
+    ]
+
+    return {
+        "pillar": 4,
+        "piece": "feature_mapping",
+        "description": features,
+        "prioritised_bug_classes": bug_class_hints,
+        "attack_surfaces": surfaces,
+        "next_step": "Use Burp/Caido to intercept requests. Call action='request_analysis' with captured request.",
+    }
+
+
+def step_request_analysis(raw_request: str) -> Dict[str, Any]:
+    """Pillar 4, Piece 2 – Request analysis.
+
+    Intercept an interesting request in Burp/Caido, paste it here.
+    Returns parameter analysis and tamper suggestions.
+
+    Parameters
+    ----------
+    raw_request:
+        Raw HTTP request text (method, headers, body).
+    """
+    tamper_targets: List[str] = []
+    notes: List[str] = []
+
+    # Detect JWT
+    if re.search(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", raw_request):
+        tamper_targets.append("JWT token – try alg:none, key confusion, or claim manipulation")
+        notes.append("Decode JWT header/payload to inspect claims.")
+
+    # Detect Base64 blobs
+    if re.search(r"[A-Za-z0-9+/]{30,}={0,2}", raw_request):
+        tamper_targets.append("Possible Base64 blob – decode and inspect for serialised objects or PII")
+
+    # Detect numeric IDs (IDOR candidates)
+    for m in re.finditer(r"[?&/](user_?id|uid|account_?id|id|resource_?id)=(\d+)", raw_request, re.I):
+        tamper_targets.append(
+            f"Numeric ID parameter '{m.group(1)}={m.group(2)}' – IDOR candidate: "
+            "swap with another account's ID using a second test account."
+        )
+
+    # Detect redirect params
+    if _REDIRECT_PARAMS.search(raw_request):
+        tamper_targets.append("Redirect parameter – test open redirect / SSRF")
+
+    # Detect file/path params
+    if _LFI_PARAMS.search(raw_request):
+        tamper_targets.append("File/path parameter – test LFI / path traversal (../../../etc/passwd)")
+
+    if not tamper_targets:
+        tamper_targets.append("No obvious high-signal parameters. Manually review each parameter for business-logic abuse.")
+
+    return {
+        "pillar": 4,
+        "piece": "request_analysis",
+        "tamper_targets": tamper_targets,
+        "analysis_notes": notes,
+        "next_step": "For each tamper target above, modify the request in Burp Repeater and observe the response. Call action='vuln_scan' to automate checks.",
+    }
+
+
+def step_js_review(js_content: str) -> Dict[str, Any]:
+    """Pillar 4, Piece 3 – Client-side JS / code review.
+
+    Feed client-side JavaScript or open-source component code.
+    Extracts API endpoints, hardcoded secrets, and references to subdomains.
+
+    Parameters
+    ----------
+    js_content:
+        JavaScript source code text.
+    """
+    api_calls: List[str] = []
+    hardcoded_secrets: List[str] = []
+    subdomains_found: List[str] = []
+
+    # Extract fetch / axios / XHR patterns
+    for m in re.finditer(
+        r"""(?:fetch|axios\.[a-z]+|XMLHttpRequest)\s*\(\s*[`'"]((?:https?://[^`'"]+|/[^`'"]+))[`'"]""",
+        js_content,
+    ):
+        api_calls.append(m.group(1))
+
+    # Extract relative API paths
+    for m in re.finditer(r"""(?:url|endpoint|path)\s*[:=]\s*[`'"](/api/[^`'"]+)[`'"]""", js_content):
+        api_calls.append(m.group(1))
+
+    # Look for hardcoded keys/tokens
+    for m in re.finditer(
+        r"""(?:api_?key|secret|token|password|bearer)\s*[:=]\s*[`'"]([A-Za-z0-9_\-]{8,})[`'"]""",
+        js_content,
+        re.I,
+    ):
+        hardcoded_secrets.append(f"{m.group(0)[:80]} …")
+
+    # Extract domain references
+    for m in re.finditer(r"https?://([a-zA-Z0-9._-]+\.[a-zA-Z]{2,})", js_content):
+        host = m.group(1)
+        if host not in subdomains_found:
+            subdomains_found.append(host)
+
+    return {
+        "pillar": 4,
+        "piece": "js_code_review",
+        "api_endpoints_found": list(dict.fromkeys(api_calls)),
+        "hardcoded_secrets": hardcoded_secrets,
+        "subdomains_referenced": subdomains_found,
+        "next_step": (
+            "For each API endpoint found, generate curl commands or add to Burp/Caido scope. "
+            "Test unauthenticated access (Broken Access Control). "
+            "Add any new subdomains to your subdomain hit list."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pillar 5 – Reporting & Growth
+# ---------------------------------------------------------------------------
+
+# Severity-to-bounty guidance based on video insights
+_IMPACT_TEMPLATES: Dict[str, str] = {
+    "broken_access_control": (
+        "This vulnerability allows a low-privilege user to access resources belonging to "
+        "other users, violating the principle of least privilege. Depending on the sensitivity "
+        "of the exposed data (PII, financial records, session tokens), this constitutes a "
+        "Critical or High severity finding under CVSS v3."
+    ),
+    "idor": (
+        "An Insecure Direct Object Reference allows an authenticated attacker to read or "
+        "modify resources owned by arbitrary users by manipulating predictable identifiers. "
+        "Full account takeover or data exfiltration may be achievable at scale."
+    ),
+    "xss_blind": (
+        "A Blind XSS payload executing in an admin or staff context grants the attacker the "
+        "ability to steal privileged session cookies, exfiltrate CSRF tokens, or perform "
+        "admin-level actions on behalf of the victim, constituting a High severity finding."
+    ),
+    "xss_reflected": (
+        "Reflected XSS allows an attacker to craft a malicious URL that executes arbitrary "
+        "JavaScript in a victim's browser, enabling session hijacking, credential theft, or "
+        "phishing within the trusted origin."
+    ),
+    "open_redirect": (
+        "An open redirect can be chained with phishing or OAuth token theft attacks, "
+        "redirecting victims from a trusted domain to an attacker-controlled page."
+    ),
+}
+
+
+def step_report_assist(bug_class: str, description: str) -> Dict[str, Any]:
+    """Pillar 5 – Report writing assistance.
+
+    Describe the bug class (not the raw payload/URL) and get:
+      - A professional impact statement.
+      - A severity framing.
+      - Critique checklist to improve the report.
+
+    Parameters
+    ----------
+    bug_class:
+        One of: broken_access_control, idor, xss_blind, xss_reflected, open_redirect,
+        or any free-text description.
+    description:
+        Sanitised description (no raw endpoints, no payloads, no target URLs).
+    """
+    # Normalise
+    key = re.sub(r"[\s\-]", "_", bug_class.lower())
+    impact = _IMPACT_TEMPLATES.get(key, (
+        "Evaluate the blast radius: can this bug affect all users, only the attacker's account, "
+        "or a subset? Quantify data sensitivity and regulatory exposure (GDPR, PCI-DSS). "
+        "Frame the impact in terms of confidentiality, integrity, and availability (CIA triad)."
+    ))
+
+    critique = [
+        "Is the reproduction path numbered and step-by-step?",
+        "Does it include a proof-of-concept (screenshot / curl command) without exposing sensitive URLs?",
+        "Is the impact statement written from a business risk perspective (not just technical)?",
+        "Is the severity (CVSS) explicitly stated with justification?",
+        "Are remediation recommendations concrete and actionable?",
+        "Is the report free of jargon that a non-technical triage team member couldn't parse?",
+        "Would a senior hunter reading this immediately understand what you found and why it matters?",
+    ]
+
+    return {
+        "pillar": 5,
+        "piece": "report_assist",
+        "bug_class": bug_class,
+        "your_description": description,
+        "impact_statement": impact,
+        "report_critique_checklist": critique,
+        "pro_tip": (
+            "You do NOT need to paste the raw payload or URL to get AI writing help. "
+            "Describe the bug class + the access level achieved. "
+            "The quality of your report is the difference between a $500 and a $3000 bounty."
+        ),
+    }
+
+
+def step_feedback_loop(hunt_summary: str) -> Dict[str, Any]:
+    """Pillar 5 – Post-hunt feedback loop (compounds skill on every finding).
+
+    After every bug (even N/A or duplicates), describe what you did and get
+    structured feedback. This is the habit that compounds fastest.
+
+    Parameters
+    ----------
+    hunt_summary:
+        A sanitised description of what you tested and what you found
+        (e.g., 'Tested IDOR by swapping user_id param, confirmed access to another user's billing').
+    """
+    feedback_prompts = [
+        "What did you do well in this hunt?",
+        "What would a more experienced hunter have done differently?",
+        "What related attack surfaces or chained bugs could be worth investigating next time?",
+        "Which bug class would you prioritise testing first on a similar target in the future?",
+        "How would you have structured the report differently to increase the bounty?",
+    ]
+    return {
+        "pillar": 5,
+        "piece": "feedback_loop",
+        "your_summary": hunt_summary,
+        "reflection_questions": feedback_prompts,
+        "instruction": (
+            "Run these reflection questions through your local LLM (Ollama) or paste your summary "
+            "into Claude/ChatGPT (sanitised – no raw endpoints). "
+            "Store the AI's answers in your wiki/ directory so they compound over time."
+        ),
+    }
+
+
+def step_learning_loop(writeup_text: str) -> Dict[str, Any]:
+    """Pillar 2 – Learning loop: Read-Ask-Quiz-Apply.
+
+    Paste a bug bounty writeup. Returns structured prompts to run through your
+    AI tutor (Claude/ChatGPT) to extract maximum learning.
+
+    Parameters
+    ----------
+    writeup_text:
+        The full text of a bug bounty writeup.
+    """
+    # Extract any vulnerability names mentioned
+    vuln_names = re.findall(
+        r"\b(IDOR|XSS|SQL[i\s]?injection|SSRF|RCE|LFI|SSTI|CSRF|XXE|"
+        r"open redirect|broken access control|deserialization|path traversal)\b",
+        writeup_text,
+        re.I,
+    )
+    vuln_names = list(dict.fromkeys(v.upper() for v in vuln_names))
+
+    prompts = [
+        f"Explain this writeup to me like I'm a beginner who understands HTTP basics. Walk me through every step the attacker took and why it worked.",
+        f"What vulnerability classes are involved? ({', '.join(vuln_names) if vuln_names else 'see writeup'})",
+        "What would have prevented this bug? Give me the developer's perspective.",
+        "Quiz me on the core concepts in this writeup with 5 questions.",
+        "Give me 3 similar labs or challenges I can practice this on (HackTheBox / PortSwigger / TryHackMe).",
+        "What should I look for on a real target that would indicate this same bug class exists?",
+    ]
+
+    return {
+        "pillar": 2,
+        "piece": "learning_loop",
+        "loop": "Read → Ask → Quiz → Apply",
+        "vuln_classes_detected": vuln_names,
+        "ai_tutor_prompts": prompts,
+        "reminder": (
+            "Foundations first. If you don't understand HTTP, these prompts will generate "
+            "confusion, not insight. Complete Pillar 1 before running the learning loop."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator (Purple Engine loop)
 # ---------------------------------------------------------------------------
 
@@ -608,28 +1019,66 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
     Parameters
     ----------
     params : dict
-        Must contain ``target``.  Optional keys:
+        Optional keys vary by action. Action-specific parameters:
 
-        * ``action`` – one of ``full_pipeline``, ``subdomain_enum``,
-          ``port_scan``, ``url_collect``, ``vuln_scan``, ``report``.
-        * ``depth`` – ``quick`` | ``medium`` | ``deep`` (default ``medium``).
-        * ``raw_output`` – raw HTTP response body to analyse heuristically.
+        Pillar 2 – Learning Loop
+          * ``action='learning_loop'`` – ``writeup`` (str): full text of a bug bounty writeup.
+
+        Pillar 3 – Recon (target required)
+          * ``action='plan'``           – HITL plan gate before execution.
+          * ``action='subdomain_enum'`` – ``target`` (str), ``depth``.
+          * ``action='port_scan'``      – ``target`` (str), ``depth``.
+          * ``action='url_collect'``    – ``target`` (str), ``depth``.
+          * ``action='recon'``          – Full Pillar 3: subdomain→categorise→port→URL.
+
+        Pillar 4 – The Hunt
+          * ``action='feature_map'``      – ``features`` (str): description of app features.
+          * ``action='request_analysis'`` – ``raw_request`` (str): raw HTTP request.
+          * ``action='js_review'``        – ``js_content`` (str): JavaScript source.
+          * ``action='vuln_scan'``        – ``target`` (str).
+          * ``action='full_pipeline'``    – Full Pillar 3+4 pipeline.
+
+        Pillar 5 – Reporting & Growth
+          * ``action='report_assist'``  – ``bug_class`` (str), ``description`` (str).
+          * ``action='feedback_loop'``  – ``hunt_summary`` (str).
+          * ``action='report'``         – ``raw_output`` (str): HTTP response to heuristically parse.
+
+        Common:
+          * ``depth`` – ``quick`` | ``medium`` | ``deep`` (default ``medium``).
     """
     target = params.get("target", "").strip()
-    if not target:
-        return {
-            "status": False,
-            "summary": "Parameter 'target' is required.",
-            "result": {},
-        }
-
     action = params.get("action", "full_pipeline")
     depth = params.get("depth", "medium")
     raw_output = params.get("raw_output", "")
 
+    # Actions that don't require a target
+    _NO_TARGET_ACTIONS = {"learning_loop", "feature_map", "request_analysis", "js_review", "report_assist", "feedback_loop"}
+    if not target and action not in _NO_TARGET_ACTIONS:
+        return {
+            "status": False,
+            "summary": f"Parameter 'target' is required for action='{action}'.",
+            "result": {},
+        }
+
     try:
         if action == "full_pipeline":
             return _SKILL.run(target, depth=depth)
+
+        if action == "plan":
+            analysis = step_analyze(target)
+            domain = analysis["domain"]
+            kb_snippets = step_search_kb(domain, _SKILL._kb)
+            return {
+                "status": True,
+                "summary": f"Plan for {domain} (Requires human approval)",
+                "result": {
+                    "target": target,
+                    "depth": depth,
+                    "pipeline": ["subdomain_enum", "port_scan", "url_collect", "vuln_scan"],
+                    "kb_context_found": len(kb_snippets) > 0,
+                    "message": "Please review this plan. To execute, call this tool again with action='full_pipeline'."
+                }
+            }
 
         if action == "subdomain_enum":
             analysis = step_analyze(target)
@@ -680,17 +1129,101 @@ def run(params: Dict[str, Any]) -> Dict[str, Any]:
                 "result": {"findings": [asdict(f) for f in findings]},
             }
 
+        # ---- Pillar 2 ----
+        if action == "learning_loop":
+            writeup = params.get("writeup", "")
+            if not writeup:
+                return {"status": False, "summary": "Parameter 'writeup' is required.", "result": {}}
+            return {"status": True, "summary": "Pillar 2: Learning loop prompts generated.", "result": step_learning_loop(writeup)}
+
+        # ---- Pillar 3 (extended) ----
+        if action == "recon":
+            analysis = step_analyze(target)
+            domain = analysis["domain"]
+            subs = step_subdomain_enum(domain, depth)
+            hit_list = step_categorise_subdomains(subs)
+            resolved = step_resolve_hosts(subs)
+            alive_hosts = step_port_scan(resolved, depth)
+            urls = step_url_collect(alive_hosts, depth)
+            return {
+                "status": True,
+                "summary": f"Pillar 3 recon complete for {domain}.",
+                "result": {
+                    "domain": domain,
+                    "hit_list": {
+                        "auth": hit_list.auth_subdomains,
+                        "admin": hit_list.admin_subdomains,
+                        "api": hit_list.api_subdomains,
+                        "internal": hit_list.internal_subdomains,
+                        "marketing": hit_list.marketing_subdomains,
+                        "other": hit_list.other_subdomains,
+                        "prioritised": hit_list.prioritised(),
+                    },
+                    "alive_hosts": alive_hosts,
+                    "urls_collected": len(urls),
+                    "next_step": "Human review: approve hit list, then call action='feature_map' or action='full_pipeline'.",
+                },
+            }
+
+        # ---- Pillar 4 ----
+        if action == "feature_map":
+            features = params.get("features", "")
+            if not features:
+                return {"status": False, "summary": "Parameter 'features' is required.", "result": {}}
+            return {"status": True, "summary": "Pillar 4 Piece 1: Feature map generated.", "result": step_feature_map(features)}
+
+        if action == "request_analysis":
+            raw_request = params.get("raw_request", "")
+            if not raw_request:
+                return {"status": False, "summary": "Parameter 'raw_request' is required.", "result": {}}
+            return {"status": True, "summary": "Pillar 4 Piece 2: Request analysis complete.", "result": step_request_analysis(raw_request)}
+
+        if action == "js_review":
+            js_content = params.get("js_content", "")
+            if not js_content:
+                return {"status": False, "summary": "Parameter 'js_content' is required.", "result": {}}
+            return {"status": True, "summary": "Pillar 4 Piece 3: JS review complete.", "result": step_js_review(js_content)}
+
+        # ---- Pillar 5 ----
+        if action == "report_assist":
+            bug_class = params.get("bug_class", "")
+            description = params.get("description", "")
+            if not bug_class:
+                return {"status": False, "summary": "Parameter 'bug_class' is required.", "result": {}}
+            return {"status": True, "summary": "Pillar 5: Report assistance generated.", "result": step_report_assist(bug_class, description)}
+
+        if action == "feedback_loop":
+            hunt_summary = params.get("hunt_summary", "")
+            if not hunt_summary:
+                return {"status": False, "summary": "Parameter 'hunt_summary' is required.", "result": {}}
+            return {"status": True, "summary": "Pillar 5: Feedback loop reflection generated.", "result": step_feedback_loop(hunt_summary)}
+
+        if action == "platform_scan":
+            if not _PLATFORM_SCANNER_AVAILABLE:
+                return {
+                    "status": False,
+                    "summary": (
+                        "Platform scanner unavailable: install DrissionPage, "
+                        "playwright, and beautifulsoup4."
+                    ),
+                    "result": {},
+                }
+            return run_platform_scan(params)
         return {
             "status": False,
             "summary": f"Unknown action '{action}'.",
             "result": {
                 "available_actions": [
-                    "full_pipeline",
-                    "subdomain_enum",
-                    "port_scan",
-                    "url_collect",
-                    "vuln_scan",
-                    "report",
+                    # Pillar 2
+                    "learning_loop",
+                    # Pillar 3
+                    "plan", "recon", "subdomain_enum", "port_scan", "url_collect",
+                    # Pillar 4
+                    "feature_map", "request_analysis", "js_review", "vuln_scan", "full_pipeline",
+                    # Pillar 5
+                    "report_assist", "feedback_loop", "report",
+                    # Platform
+                    "platform_scan",
                 ]
             },
         }
@@ -725,6 +1258,7 @@ def main() -> None:
             "url_collect",
             "vuln_scan",
             "report",
+            "platform_scan",
         ],
         default="full_pipeline",
     )

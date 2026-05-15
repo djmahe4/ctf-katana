@@ -26,6 +26,9 @@ from server.mcp_server import (
     list_skills,
     run_skill,
     search_knowledge,
+    bug_hunt,
+    script_write,
+    tryhackme_research,
 )
 
 
@@ -148,3 +151,20 @@ class TestSkillMetaTools:
     def test_run_skill_missing(self):
         result = json.loads(run_skill("nonexistent_skill"))
         assert "error" in result
+
+    def test_bug_hunt_call(self):
+        # We don't run the actual pipeline (it takes too long), just check if it's callable
+        # and returns a structured error if target is missing (handled by the skill itself usually)
+        # Here we just check if the tool is registered and returns something
+        result = json.loads(bug_hunt("example.com", action="subdomain_enum"))
+        assert isinstance(result, dict)
+
+    def test_script_write_call(self):
+        result = json.loads(script_write(action="generate_report"))
+        assert isinstance(result, dict)
+
+    def test_tryhackme_research_call(self):
+        # This will fail quickly if no credentials but should be callable
+        result = json.loads(tryhackme_research(query="test", max_rooms=1))
+        assert isinstance(result, dict)
+        assert "error" in result or "status" in result

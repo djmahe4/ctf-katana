@@ -9,8 +9,8 @@ The `raum-dev-benchmarker` skill is the "truth engine" for your thesis. It provi
 
 ## Context Anchors
 
-- **Performance Baselines**: [PROGRESS.md](docs/PROGRESS.md)
-- **Experimental Goals**: [Level 3.5: Performance Optimization](docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
+- **Performance Baselines**: [PROGRESS.md](../../docs/PROGRESS.md)
+- **Experimental Goals**: [Level 3.5: Performance Optimization](../../docs/MIGRATION_GUIDE.md#️-level-35-agentic-security-hardening--performance-optimization)
 
 ## Benchmarking Workflow
 

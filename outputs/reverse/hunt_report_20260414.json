@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-04-14T12:10:51.563498",
+  "summary": {
+    "total_hosts": 0,
+    "total_vulnerabilities": 4
+  },
+  "hosts": [],
+  "vulnerabilities": [
+    {
+      "id": "flagger",
+      "severity": "High",
+      "description": "Flagger processed and hardened flag material.",
+      "tool": "flagger",
+      "owasp_category": "A09:2021 \u2013 Security Logging and Monitoring Failures"
+    },
+    {
+      "id": "logic_flag_extractor",
+      "severity": "Critical",
+      "description": "Identified potential hardcoded flag or secret in logic.",
+      "tool": "logic_flag_extractor",
+      "owasp_category": "A09:2021 \u2013 Security Logging and Monitoring Failures"
+    },
+    {
+      "id": "analysis",
+      "severity": "Medium",
+      "description": "Identified possible encodings in data.",
+      "tool": "analysis",
+      "owasp_category": "A09:2021 \u2013 Security Logging and Monitoring Failures"
+    },
+    {
+      "id": "reverse_engineering",
+      "severity": "High",
+      "description": "Brainstorming initiated for: Analyze: flag = CTF{xor_master_42}; key = 0x42",
+      "tool": "reverse_engineering",
+      "owasp_category": "A09:2021 \u2013 Security Logging and Monitoring Failures"
+    }
+  ]
+}

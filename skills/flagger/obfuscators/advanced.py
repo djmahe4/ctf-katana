@@ -13,7 +13,7 @@ class OpcodeObfuscator(BaseObfuscator):
 
     def decrypt_logic(self, var_name: str, **kwargs) -> str:
         return (f"import re\n"
-                f"bytes_list = re.findall(r'B8 ([0-9A-Fa-f]{2}) 00 00 00', {var_name})\n"
+                f"bytes_list = re.findall(r'B8 ([0-9A-Fa-f]{{2}}) 00 00 00', {var_name})\n"
                 f"{var_name} = ''.join(chr(int(b, 16)) for b in bytes_list)")
 
 class ArithmeticObfuscator(BaseObfuscator):

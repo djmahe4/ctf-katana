@@ -271,3 +271,17 @@ def fetch_raw_json(url: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         print(f"Error fetching raw JSON from {url}: {e}")
         return None
+
+def fetch_raw_text(url: str) -> Optional[str]:
+    """Fetch raw text from a URL (e.g., GitHub patch)."""
+    import requests
+    try:
+        if "github.com" in url and "raw.githubusercontent.com" not in url:
+            url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+        
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        print(f"Error fetching raw text from {url}: {e}")
+        return None

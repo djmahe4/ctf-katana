@@ -10,6 +10,11 @@ from server.utils.agentic_dispatcher import AgenticSkillDispatcher
 
 # Skills
 from skills.research_challenge_gen.run import run as run_gen
+from skills.research_challenge_gen.docker_generator import (
+    DockerGenerator,
+    DockerValidationError,
+    FlagInjectionMethod,
+)
 from skills.flagger.run import run as run_flagger
 from skills.merger.run import run as run_merger
 from skills.superpowers.run import run as run_superpowers
@@ -47,7 +52,8 @@ class PipelineConductor:
         steps = {
             "idle": self._run_research,
             "research_complete": self._run_scaffolding,
-            "scaffolding_complete": self._run_hardening,
+            "scaffolding_complete": self._run_containerization,
+            "containerization_complete": self._run_hardening,
             "hardening_complete": self._run_merger,
             "merger_complete": self._run_superpowers,
             "superpowers_complete": self._run_deployment,
@@ -149,6 +155,61 @@ class PipelineConductor:
         else:
             logger.error(f"Scaffolding failed: {result.get('summary')}")
 
+    async def _run_containerization(self):
+        """
+        Phase 3 — Containerization.
+
+        Step 3.1  Generate Docker image tagged ctf-challenge-base:latest.
+        Step 3.2  Embed vulnerability exactly — no extra attack surface.
+        Step 3.3  Inject flag via /flag.txt OR ENV FLAG variable.
+
+        Any Dockerfile already present in generated_files is validated; if it
+        fails validation the FROM line is patched and flag injection is enforced.
+        If no Dockerfile exists, a canonical one is generated from the template.
+        """
+        challenge = self.memory.get_context("challenge") or {}
+        flag = challenge.get("flag", "flag{placeholder}")
+        category = challenge.get("category", "misc").lower()
+
+        # Resolve injection method from pipeline memory (default: file)
+        injection_str = self.memory.state.get("flag_injection", "file")
+        try:
+            injection_method = FlagInjectionMethod(injection_str)
+        except ValueError:
+            injection_method = FlagInjectionMethod.FILE
+
+        generator = DockerGenerator()
+        challenge_dict = {"category": category}
+        files = list(challenge.get("generated_files") or [])
+
+        existing = next((f for f in files if f.get("name") == "Dockerfile"), None)
+
+        if existing:
+            # Validate; patch FROM if wrong; regenerate if still invalid
+            try:
+                generator.validate(existing["content"])
+                logger.info("[Phase 3] Existing Dockerfile validated OK.")
+            except DockerValidationError as exc:
+                logger.warning("[Phase 3] Invalid Dockerfile detected (%s). Patching…", exc)
+                patched = generator.patch_base_image(existing["content"])
+                try:
+                    generator.validate(patched)
+                    existing["content"] = patched
+                    logger.info("[Phase 3] Dockerfile patched and re-validated OK.")
+                except DockerValidationError:
+                    logger.warning("[Phase 3] Patch insufficient; regenerating Dockerfile.")
+                    spec = generator.generate(challenge_dict, flag, injection_method)
+                    existing["content"] = spec.dockerfile
+        else:
+            # Step 3.1 + 3.3: generate a fresh, spec-compliant Dockerfile
+            spec = generator.generate(challenge_dict, flag, injection_method)
+            files.append({"name": "Dockerfile", "content": spec.dockerfile})
+            logger.info("[Phase 3] Dockerfile generated (injection=%s).", injection_method.value)
+
+        challenge["generated_files"] = files
+        self.memory.update_context("challenge", challenge)
+        self.memory.transition("containerization_complete")
+
     async def _run_hardening(self):
         challenge = self.memory.get_context("challenge")
         
@@ -242,18 +303,33 @@ class PipelineConductor:
     async def _run_superpowers(self):
         """
         Applies adversarial enhancements to the challenge.
+
+        Invocation condition (spec Phase 4, Step 4.3):
+          INVOKE WHEN: ai_hardening in [standard, aggressive]  OR  chaos_level > 0.3
+          Otherwise the step is a no-op (transitions straight to superpowers_complete).
         """
-        logger.info("😈 Activating Superpowers (Adversarial Engine)...")
+        ai_hardening = self.memory.state.get("ai_hardening", "none")
+        chaos_level = float(self.memory.state.get("chaos_level", 0.0))
+
+        should_invoke = ai_hardening in ("standard", "aggressive") or chaos_level > 0.3
+        if not should_invoke:
+            logger.info(
+                "⏭️  Superpowers skipped (ai_hardening=%s, chaos_level=%.2f). "
+                "Set ai_hardening=standard|aggressive or chaos_level>0.3 to enable.",
+                ai_hardening,
+                chaos_level,
+            )
+            self.memory.transition("superpowers_complete")
+            return
+
+        logger.info("😈 Activating Superpowers (Adversarial Engine)…")
         challenge = self.memory.get_context("challenge")
-        
-        # Get chaos level from memory or default to 0.5
-        chaos_level = self.memory.state.get("chaos_level", 0.5)
-        
+
         params = await self.dispatcher.prepare_params("superpowers", {
-            "challenge": challenge, 
-            "chaos_level": chaos_level
+            "challenge": challenge,
+            "chaos_level": chaos_level,
         })
-        
+
         # HITL Gate: Strategy Review
         task_id = "adversarial_strategy"
         if self.interactive and not self.memory.is_approved(task_id):
@@ -265,14 +341,15 @@ class PipelineConductor:
             self.memory.mark_approved(task_id)
 
         result = self.dispatcher.execute_local(run_superpowers, params)
-        
+
         if result.get("status") is True:
             logger.info("✅ Superpowers applied! Challenge is now AI-Hard.")
             self.memory.update_context("challenge", result.get("result", {}).get("challenge"))
         else:
             logger.error(f"Superpowers failed: {result.get('summary')}")
-            
+
         self.memory.transition("superpowers_complete")
+
 
     async def _run_deployment(self):
         logger.info("🚀 Preparing CTFd Deployment...")

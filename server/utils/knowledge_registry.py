@@ -49,12 +49,14 @@ class KnowledgeRegistry:
     def recognize_intent(self, query: str) -> str:
         """
         Detects the search intent from the query string.
-        Returns: 'cve', 'url', 'nuclei', 'exploit', 'patch', 'general'
+        Returns: 'cve', 'url', 'nuclei', 'exploit', 'patch', 'tryhackme', 'general'
         """
         query_lower = query.lower()
         
         if re.search(r'cve-\d{4}-\d+', query_lower):
             return "cve"
+        if "tryhackme" in query_lower or "thm" in query_lower:
+            return "tryhackme"
         if re.search(r'https?://[^\s]+', query_lower):
             return "url"
         if "nuclei" in query_lower or query_lower.endswith(".yaml"):
@@ -96,10 +98,11 @@ class KnowledgeRegistry:
             pro_raw = self.rag.search(query_str, limit=5)
             results["pro_results"] = pro_raw
         except Exception as e:
-            logger.warning(f"Tier 2 (Pro) query failed: {e}")
+            logger.warning(f"Tier 2 (Pro) query failed (possibly ChromaDB transient error): {e}")
+            results["pro_results"] = []
 
         # Intent-Specific Routing
-        if intent in ["cve", "url", "exploit", "patch"]:
+        if intent in ["cve", "url", "exploit", "patch", "tryhackme"]:
             # Trigger 'Purple Loop' logic (Placeholder for LLM-guided extraction)
             results["purple_loop"] = await self._synthesize_purple_loop(query_str, intent)
 
@@ -112,16 +115,56 @@ class KnowledgeRegistry:
         """
         logger.info(f"Synthesizing Purple Loop for {intent}...")
         
+        # 0. Specialized Scrapers (TryHackMe)
+        if intent == "tryhackme":
+            logger.info("🎯 Triggering TryHackMe specialized research...")
+            try:
+                from skills.tryhackme.run import run as run_thm
+                # We limit to 1 room if a specific name is in query
+                thm_results = run_thm({"max_rooms": 1, "query": query})
+                if thm_results.get("status"):
+                    # Load the generated dataset for the snippets
+                    dataset_file = thm_results.get("file", "thm_dataset.jsonl")
+                    snippets = []
+                    if os.path.exists(dataset_file):
+                        with open(dataset_file, "r", encoding="utf-8") as f:
+                            for line in f:
+                                data = json.loads(line)
+                                snippets.append({
+                                    "content": data.get("text", ""),
+                                    "purpose": "walkthrough",
+                                    "source": f"TryHackMe: {data.get('room', 'Unknown')}",
+                                    "context": f"Walkthrough for room '{data.get('room', 'Unknown')}'"
+                                })
+                    
+                    return {
+                        "vulnerability_sink": "THM_ROOM_LOGIC",
+                        "has_fix": True,
+                        "has_full_intelligence": len(snippets) > 0,
+                        "exploit_primitive": "WALKTHROUGH_AVAILABLE",
+                        "intelligence_snippets": snippets[:5] # Keep it lean
+                    }
+            except Exception as e:
+                logger.error(f"TryHackMe specialized research failed: {e}")
+
         # 1. Search semantic tier for Exploit vs Patch using specific metadata filters
-        # We also pass semantic keywords to refine the vector search (LLM suggested)
-        exploit_docs = self.rag.search(f"{query} exploit POC code", limit=5, where={"purpose": "exploit"})
-        patch_docs = self.rag.search(f"{query} security fix patch diff", limit=5, where={"purpose": "patch"})
+        try:
+            exploit_docs = self.rag.search(f"{query} exploit POC", limit=5, where={"purpose": "exploit"})
+            patch_docs = self.rag.search(f"{query} security fix patch", limit=5, where={"purpose": "patch"})
+        except Exception as e:
+            logger.warning(f"Purple Loop search failed: {e}")
+            exploit_docs = []
+            patch_docs = []
         
         # Fallback to general search if classified snippets are missing
         if not exploit_docs:
-            exploit_docs = self.rag.search(f"{query} exploit POC", limit=3)
+            try:
+                exploit_docs = self.rag.search(f"{query} exploit", limit=3)
+            except: exploit_docs = []
         if not patch_docs:
-            patch_docs = self.rag.search(f"{query} fix patch", limit=3)
+            try:
+                patch_docs = self.rag.search(f"{query} patch fix", limit=3)
+            except: patch_docs = []
 
         # 2. Extract Data for Analysis
         exploit_text = "\n---\n".join([res.content for res in exploit_docs]) if exploit_docs else "No exploit POC found."

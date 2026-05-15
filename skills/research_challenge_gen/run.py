@@ -26,6 +26,12 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from skills.research_challenge_gen.docker_generator import (
+    DockerGenerator,
+    DockerValidationError,
+    FlagInjectionMethod,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -621,7 +627,51 @@ PATCH STRATEGY:
         file_list = ", ".join([f["name"] for f in existing_files])
         prompt = f"Generate only the raw content of a {name} for a {lang} project with these files: {file_list}. No markdown explanation."
         return self._query_llm(prompt).strip("`").strip()
-    
+
+    def _ensure_dockerfile(
+        self,
+        challenge: "CTFChallenge",
+        injection_method: FlagInjectionMethod = FlagInjectionMethod.FILE,
+    ) -> List[Dict[str, str]]:
+        """
+        Phase 3 enforcement: ensure the challenge's generated_files list contains
+        a valid Dockerfile that:
+          - uses FROM ctf-challenge-base:latest  (Step 3.1)
+          - injects the flag via /flag.txt or ENV FLAG  (Step 3.3)
+
+        If an LLM-generated Dockerfile exists but is invalid, it is patched.
+        If none exists, one is generated from the canonical template.
+
+        Returns the (possibly updated) generated_files list.
+        """
+        files: List[Dict[str, str]] = list(challenge.generated_files or [])
+        flag: str = challenge.flag or "flag{placeholder}"
+        category: str = (challenge.category or "misc").lower()
+        generator = DockerGenerator()
+        challenge_dict = {"category": category}
+
+        existing = next((f for f in files if f.get("name") == "Dockerfile"), None)
+
+        if existing:
+            try:
+                generator.validate(existing["content"])
+                logger.debug("[Phase 3] Existing Dockerfile is valid.")
+            except DockerValidationError as exc:
+                logger.warning("[Phase 3] Patching invalid Dockerfile: %s", exc)
+                patched = generator.patch_base_image(existing["content"])
+                # Re-validate after patching FROM; regenerate fully if still invalid
+                try:
+                    generator.validate(patched)
+                    existing["content"] = patched
+                except DockerValidationError:
+                    spec = generator.generate(challenge_dict, flag, injection_method)
+                    existing["content"] = spec.dockerfile
+        else:
+            spec = generator.generate(challenge_dict, flag, injection_method)
+            files.append({"name": "Dockerfile", "content": spec.dockerfile})
+
+        return files
+
     def generate_from_finding(
         self,
         finding: Dict[str, Any],
@@ -756,7 +806,10 @@ The flag is: {flag}
 
         # Apply hardening
         challenge = self._apply_hardening(challenge, ai_hardening)
-        
+
+        # Phase 3: ensure a valid, spec-compliant Dockerfile is present
+        challenge.generated_files = self._ensure_dockerfile(challenge)
+
         return challenge
 
     async def generate_from_cve(
@@ -884,7 +937,10 @@ Output as JSON:
         )
         
         challenge = self._apply_hardening(challenge, ai_hardening)
-        
+
+        # Phase 3: ensure a valid, spec-compliant Dockerfile is present
+        challenge.generated_files = self._ensure_dockerfile(challenge)
+
         return challenge
 
 
