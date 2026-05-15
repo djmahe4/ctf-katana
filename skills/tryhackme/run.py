@@ -5,7 +5,7 @@ import csv
 import logging
 import re
 import time
-from DrissionPage import ChromiumOptions, ChromiumPage
+from DrissionPage import ChromiumOptions, ChromiumPage, WebPage
 from bs4 import BeautifulSoup
 import requests
 from dotenv import load_dotenv
@@ -407,27 +407,57 @@ class TryHackMeScraper:
             for link in self.page.eles('tag:a'):
                 categorize_link(link.link)
         
-        # 2. Search DuckDuckGo
+        # 2. Search DuckDuckGo (General Writeups)
         search_query = f"TryHackMe {room_name} writeup"
         self.page.get(f"https://duckduckgo.com/?q={search_query.replace(' ', '+')}")
-        time.sleep(2)
+        time.sleep(3)
         for link in self.page.eles('tag:a'):
             href = link.link
             if href and 'duckduckgo' not in href:
                 categorize_link(href)
+
+        # 3. Search DuckDuckGo (Specific YouTube Walkthroughs)
+        yt_search_query = f"TryHackMe {room_name} walkthrough site:youtube.com"
+        self.page.get(f"https://duckduckgo.com/?q={yt_search_query.replace(' ', '+')}")
+        time.sleep(3)
+        for link in self.page.eles('tag:a'):
+            href = link.link
+            if href and 'youtube.com' in href:
+                categorize_link(href)
         
-        # Prioritize: GitHub > Medium > Others > YouTube
-        # (User said markdown (github) > medium(paywall) > youtube)
-        final_urls = github_links + medium_links + other_links + yt_links
+        # Prioritize: YouTube > GitHub > Others > Medium
+        # (Prioritizing high-fidelity video intelligence)
+        final_urls = yt_links + github_links + other_links + medium_links
         
         return {
-            "all_urls": final_urls[:10],
+            "all_urls": final_urls,
             "github": github_links,
             "medium": medium_links,
             "youtube": yt_links,
-            "others": other_links,
+            "other": other_links,
             "is_premium": is_premium
         }
+
+class LongTermMemory:
+    def __init__(self):
+        self.ips = set()
+        self.creds = set()
+        self.flags = set()
+
+    def update(self, text):
+        # Basic regex-based extraction to seed memory before LLM
+        found_ips = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', text)
+        for ip in found_ips: self.ips.add(ip)
+        
+    def get_context(self):
+        return f"Verified Environment: IPs={list(self.ips)}, Creds={list(self.creds)}, Flags={list(self.flags)}"
+
+class TryHackMeScraper:
+    def __init__(self, email, password):
+        self.email = email
+        self.password = password
+        self.page = WebPage()
+        self.ltm = LongTermMemory()
 
     def extract_writeup_text(self, url):
         logger.info(f"Extracting content from {url}...")
@@ -458,27 +488,35 @@ class TryHackMeScraper:
         return text
 
     def parse_writeup_with_llm(self, text, previous_context=None):
-        logger.info(f"Parsing writeup segment with LLM (Context Aware: {bool(previous_context)})...")
+        logger.info(f"Parsing segment with HYPER-GROUNDED Extraction...")
         
-        context_str = f"\nPREVIOUSLY EXTRACTED STEPS SUMMARY:\n{previous_context}\n" if previous_context else ""
+        # Seed memory from raw text
+        self.ltm.update(text)
+        ltm_context = self.ltm.get_context()
+        
+        context_str = f"\nPREVIOUSLY RECONSTRUCTED STATE:\n{previous_context}\n" if previous_context else ""
         
         prompt = f"""
-        Analyze this segment of a TryHackMe room walkthrough and extract the core technical steps.
+        You are a Hyper-Grounded CTF Data Extractor. Transform the technical segment into high-fidelity steps.
+        
+        {ltm_context}
         {context_str}
         
-        NEW SEGMENT CONTENT:
+        RAW SEGMENT DATA (OCR + Transcript):
         {text}
 
-        TASK:
-        1. Identify new commands, flags, or exploitation steps in this segment.
-        2. Combine them with the context of what was found previously.
-        3. Ensure no technical detail is lost.
-        4. Output as a SINGLE valid JSON object.
+        STRICT EXTRACTION RULES:
+        1. Exploit Primitives: Extract ONLY EXACT commands used. If no command is visible, OMIT this field.
+        2. Environment Context: Identify Target OS/Ports ONLY if explicitly visible. DO NOT assume.
+        3. Flags & Credentials: Preserve verbatim CTF flags (THM{{...}}) or passwords found.
+        4. ZERO SPECULATION: If a detail is missing (e.g. an IP), do not invent one. Use "UNKNOWN" or omit.
+        5. HALLUCINATION CHECK: Do not mention tools like 'Hydra' or 'Sqlmap' unless they are explicitly in the text.
 
-        Output format (JSON):
+        OUTPUT FORMAT (JSON):
         {{
-            "instruction": ["step description", "..."],
-            "output": ["detailed commands/output", "..."]
+            "instruction": ["Verified objective of the step"],
+            "output": ["Verbatim command and technical result"],
+            "metadata": {{ "ips": [], "creds": [], "tools": [] }}
         }}
         """
         try:
@@ -495,34 +533,43 @@ class TryHackMeScraper:
             content = response.json().get('message', {}).get('content', '')
             
             # More robust JSON extraction
-            json_match = re.search(r'(\{.*\})', content, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-                # Basic cleaning of common LLM JSON errors
-                json_str = json_str.replace('\n', ' ').replace('\r', '')
-                return json.loads(json_str)
+            json_matches = re.finditer(r'(\{.*?\})', content, re.DOTALL)
+            for match in json_matches:
+                try:
+                    json_str = match.group(1)
+                    # Basic cleaning of common LLM JSON errors
+                    json_str = json_str.replace('\n', ' ').replace('\r', '')
+                    return json.loads(json_str)
+                except:
+                    continue
+            return None
         except Exception as e:
             logger.error(f"LLM parsing failed: {e}")
             return None
 
     def refine_and_compress_data(self, instructions, outputs):
-        """Final pass to remove redundancies while preserving all unique technical commands."""
-        logger.info("Performing final refinement/compression pass...")
+        """Final Pass: Technical Audit & Consolidation."""
+        logger.info("Executing Technical Audit and Refinement...")
         content = ""
         for i, (inst, out) in enumerate(zip(instructions, outputs)):
-            content += f"Step {i+1}: {inst}\nDetails: {out}\n\n"
+            content += f"Step {i+1}: {inst}\nTechnical Details: {out}\n\n"
             
         prompt = f"""
-        Review the following aggregated walkthrough steps. 
-        Consolidate any redundant steps while ensuring that EVERY unique command, flag, and exploitation detail is preserved.
+        You are a Forensic Security Auditor. Perform a Technical Audit on this CTF walkthrough.
         
-        INPUT STEPS:
+        INPUT DATA:
         {content}
         
-        Final Output format (JSON):
+        AUDIT RULES:
+        1. PURGE Speculation: Remove any mention of tools (Hydra, Metasploit) or techniques that were not explicitly in the raw input.
+        2. CONSOLIDATE: Merge repetitive enumeration into single concise steps.
+        3. FIDELITY: Ensure all IPs, ports, and commands match the verified data exactly.
+        4. STRUCTURE: Maintain a clear Recon -> Initial Access -> PrivEsc -> Looting flow.
+
+        FINAL OUTPUT FORMAT (JSON):
         {{
-            "instruction": ["final step 1", "..."],
-            "output": ["final detailed commands 1", "..."]
+            "instruction": ["Audited and verified step description"],
+            "output": ["Verified technical commands/results"]
         }}
         """
         try:
@@ -661,7 +708,8 @@ def run(params):
                 
                 best_data_list = [] # Store all successful parses
                 
-                # Process URLs in priority order
+                # Process URLs in priority order (YouTube first)
+                writeup_urls.sort(key=lambda x: 0 if ("youtube.com" in x or "youtu.be" in x) else 1)
                 for url in writeup_urls:
                     try:
                         if ("youtube.com" in url or "youtu.be" in url) and AdvancedYTScraper:
@@ -671,37 +719,47 @@ def run(params):
                             os.makedirs(yt_output, exist_ok=True)
                             
                             yt_scraper = AdvancedYTScraper(output_dir=yt_output)
-                            # Return chunked results (default 2 mins)
-                            yt_chunks = yt_scraper.run(url, max_duration=None, chunk_interval=180) # 3 min chunks
+                            yt_scraper.screenshot_interval = 10.0 
                             
-                            if yt_chunks:
-                                logger.info(f"Captured {len(yt_chunks)} chunks from YouTube. Processing live with context compression...")
-                                current_instructions = []
-                                current_outputs = []
+                            # Use full duration if not specified
+                            final_max = params.get('max_duration', None)
+                            yt_gen = yt_scraper.run(url, max_duration=final_max, chunk_interval=60) 
+                            
+                            current_instructions = []
+                            current_outputs = []
+                            chunk_count = 0
+                            
+                            for chunk in yt_gen:
+                                chunk_count += 1
+                                logger.info(f"Processing technical chunk {chunk_count}...")
                                 
-                                for i, chunk in enumerate(yt_chunks):
-                                    logger.info(f"Processing chunk {i+1}/{len(yt_chunks)} ({chunk['start_time']:.0f}s - {chunk['end_time']:.0f}s)")
-                                    text = f"Walkthrough Segment [{chunk['start_time']:.0f}s - {chunk['end_time']:.0f}s]:\n{chunk['combined_text']}"
-                                    
-                                    # Create a summary context for the next chunk
-                                    context_summary = ""
-                                    if current_instructions:
-                                        # Use last 3 steps as context to maintain flow without bloating prompt
-                                        last_steps = current_instructions[-3:]
-                                        context_summary = "Previous steps found: " + " -> ".join(last_steps)
-                                    
-                                    parsed = scraper.parse_writeup_with_llm(text, previous_context=context_summary)
-                                    if parsed:
-                                        current_instructions.extend(parsed.get('instruction', []))
-                                        current_outputs.extend(parsed.get('output', []))
+                                # Combine OCR texts for the LLM
+                                visual_text = "\n".join([v['ocr_text'] for v in chunk['visuals']])
+                                transcript_text = "\n".join([t['text'] for t in chunk['transcripts']])
                                 
+                                combined_input = f"--- VISUAL DATA ---\n{visual_text}\n\n--- TRANSCRIPT DATA ---\n{transcript_text}"
+                                
+                                # Create context summary for continuity
+                                context_summary = ""
                                 if current_instructions:
-                                    # Followup to include the entire walkthrough without missing a single second
-                                    refined = scraper.refine_and_compress_data(current_instructions, current_outputs)
-                                    if refined:
-                                        best_data_list.append(refined)
+                                    context_summary = "Exploit Progress so far: " + " -> ".join(current_instructions[-3:])
+                                
+                                parsed = scraper.parse_writeup_with_llm(combined_input, previous_context=context_summary)
+                                if parsed:
+                                    current_instructions.extend(parsed.get('instruction', []))
+                                    current_outputs.extend(parsed.get('output', []))
+                                    # Update metadata from parsed segment if available
+                                    if 'metadata' in parsed:
+                                        # Simple heuristic: add words to creds/ips if they look like it
+                                        for ip in parsed['metadata'].get('ips', []): scraper.ltm.ips.add(ip)
+                            
+                            if current_instructions:
+                                logger.info(f"Completed processing {chunk_count} chunks. Refining final dataset...")
+                                refined = scraper.refine_and_compress_data(current_instructions, current_outputs)
+                                if refined:
+                                    best_data_list.append(refined)
                             else:
-                                logger.warning("YouTube scraper returned no results.")
+                                logger.warning("YouTube scraper yielded no technical data chunks.")
                                 
                         elif ("medium.com" in url or "freedium" in url) and FreediumScraper:
                             logger.info(f"Using FreediumScraper for: {url}")

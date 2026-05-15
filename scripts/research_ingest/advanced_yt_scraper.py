@@ -31,7 +31,7 @@ class AdvancedYTScraper:
         co.incognito(True)
         co.set_argument('--mute-audio')
         co.set_argument('--window-size=1280,720')
-        # co.headless(True) # Optional
+        co.headless(True) # Optional
         self.page = ChromiumPage(co)
         self.page.listen.start() # Start listening to all packets
         
@@ -40,6 +40,8 @@ class AdvancedYTScraper:
         self.last_capture_time = 0
         self.is_terminal_mode = False
         self.video_metadata = {}
+        self._main_video_duration = 0
+        self.screenshot_interval = 2.0 # Default interval between frame captures
         
         # EasyOCR Setup
         if easyocr:
@@ -274,7 +276,7 @@ class AdvancedYTScraper:
         """
         self.page.run_js(js_chrome)
 
-    def get_video_duration(self):
+    def _get_video_duration(self):
         """Returns the total duration of the video in seconds, ensuring we get the main content duration."""
         for _ in range(15): # Wait up to 7.5 seconds
             duration = self.page.run_js("""
@@ -526,57 +528,61 @@ class AdvancedYTScraper:
             
         return chunks
 
-    def run(self, url, max_duration=None, chunk_interval=120):
-        """Main scraping loop. Returns chunked OCR results."""
-        self.logger.info(f"[*] Starting scrape: {url}")
-        self.page.get(url)
-        
-        # Wait for video to be ready and metadata to load
-        self.page.wait.ele_displayed('.html5-main-video', timeout=15)
-        time.sleep(3) # Extra buffer for JS to update duration
-        
-        # Proactively enable CC to trigger timedtext packets
+    def _init_player(self):
+        """Initializes the YouTube player, handles quality, and enables captions."""
         try:
+            # Wait for video to be ready
+            self.page.wait.ele_displayed('.html5-main-video', timeout=15)
+            time.sleep(3) # Extra buffer for JS
+            
+            # Force high quality
+            self.force_high_quality()
+            
+            # Proactively enable CC to trigger timedtext packets
             self.page.run_js("""
                 try {
+                    const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                    if (player && player.loadModule) player.loadModule('captions');
                     const ccBtn = document.querySelector('.ytp-subtitles-button');
                     if (ccBtn && ccBtn.getAttribute('aria-pressed') === 'false') {
                         ccBtn.click();
-                        console.log("CC Enabled");
                     }
-                    const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                    if (player && player.loadModule) player.loadModule('captions');
                 } catch(e) {}
             """)
-            self.logger.info("[*] Attempted to enable Closed Captions.")
-        except: pass
+            
+            # Initial Skip Ads and Get Duration
+            self.immediate_skip_ads()
+            dur = self._get_video_duration()
+            self._main_video_duration = dur
+            self.page.run_js(f"window._expected_duration = {dur};")
+            self.logger.info(f"[*] Player initialized. Video duration: {dur}s")
+        except Exception as e:
+            self.logger.warning(f"[!] Player initialization issues: {e}")
+
+    def run(self, video_url, max_duration=3600, chunk_interval=180):
+        """
+        Main scraping loop.
+        Refactored as a generator to yield chunked results in real-time.
+        """
+        self.video_url = video_url
+        self.page.get(video_url)
+        self._init_player()
         
-        # Proactively enable CC to trigger timedtext packets
-        try:
-            self.page.run_js("""
-                const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                if (player && player.loadModule) player.loadModule('captions');
-                const ccBtn = document.querySelector('.ytp-subtitles-button');
-                if (ccBtn && ccBtn.getAttribute('aria-pressed') === 'false') ccBtn.click();
-            """)
-        except: pass
-        
-        # Initial Skip and Metadata
-        self.immediate_skip_ads()
-        video_duration = self.get_video_duration()
-        self._main_video_duration = video_duration # For _get_active_video check
-        self.page.run_js(f"window._expected_duration = {video_duration};")
-        
+        video_duration = self._get_video_duration()
         if max_duration is None or max_duration > video_duration:
             max_duration = video_duration
+            
+        self.logger.info(f"[*] Starting scraper on {video_url} (Max: {max_duration}s)")
         
-        self.logger.info(f"[*] Scraping for {max_duration:.1f}s (Video Total: {video_duration:.1f}s)")
-        
-        start_time = time.time()
         frames_saved = 0
-        is_ui_hidden = False
         raw_results = []
+        is_ui_hidden = False
+        last_chunk_video_time = 0
         
+        # Initial wait for player
+        time.sleep(5)
+        self.force_high_quality()
+
         curr_video_time = 0
         while curr_video_time < max_duration:
             try:
@@ -587,7 +593,7 @@ class AdvancedYTScraper:
                     time.sleep(1)
                     continue
 
-                # Process transcripts (Non-blocking network poll) - ONLY if not an ad
+                # Process transcripts
                 if not is_ad:
                     self._process_timedtext()
 
@@ -597,7 +603,6 @@ class AdvancedYTScraper:
                         self.toggle_chrome(True)
                         is_ui_hidden = False
                     self.logger.info(f"[!] Ad detected - forcing skip...")
-                    # Fast Forward + Click Skip
                     self.page.run_js("""
                         const video = document.querySelector('video');
                         if (video) video.currentTime = video.duration || 999;
@@ -608,41 +613,23 @@ class AdvancedYTScraper:
                     continue
                 else:
                     # Not an ad: ensure playback and normal speed
-                    js_resume = """
-                    try {
-                        const v = document.querySelector('video');
-                        if (v) {
-                            if (v.playbackRate > 1.0) v.playbackRate = 1.0;
-                            if (v.muted) v.muted = false;
-                            if (v.paused) v.play();
-                        }
-                    } catch(e) {}
-                    """
-                    self.page.run_js(js_resume)
+                    self.page.run_js("""
+                        try {
+                            const v = document.querySelector('video');
+                            if (v && v.playbackRate > 1.0) v.playbackRate = 1.0;
+                        } catch(e) {}
+                    """)
                     if frames_saved % 20 == 0:
                         self.force_high_quality()
 
-                # EMERGENCY AD CHECK right before screenshot to prevent ad-frame leakage
+                # EMERGENCY AD CHECK
                 is_ad_emergency = self.page.run_js("""
                     const isVisible = (el) => el && (el.offsetWidth > 0 || el.offsetHeight > 0);
-                    const selectors = [
-                        '.ytp-ad-skip-button', '.ytp-ad-skip-button-modern', 
-                        '.ytp-ad-skip-button-container', '.ytp-ad-skip-button-slot',
-                        '.ytp-visit-advertiser-link', '.ytp-ad-component--clickable',
-                        '.ytp-ad-badge', '.ytp-ad-simple-ad-badge',
-                        '.ad-showing', '.ad-interrupting', '.ytp-ad-module'
-                    ];
+                    const selectors = ['.ytp-ad-skip-button', '.ytp-ad-badge', '.ad-showing', '.ad-interrupting'];
                     return selectors.some(s => isVisible(document.querySelector(s)));
                 """)
                 if is_ad_emergency:
-                    self.logger.warning("[!] Emergency ad detection triggered - forcing skip")
-                    self.page.run_js("""
-                        const v = document.querySelector('video');
-                        if (v) { v.currentTime = v.duration || 999; v.playbackRate = 16.0; }
-                        const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern');
-                        if (skip) skip.click();
-                    """)
-                    time.sleep(1)
+                    self.page.run_js("const v = document.querySelector('video'); if (v) v.currentTime = v.duration || 999;")
                     continue
 
                 # 3. Capture Frame
@@ -650,111 +637,79 @@ class AdvancedYTScraper:
                     if not is_ui_hidden:
                         self.toggle_chrome(False)
                         is_ui_hidden = True
-                        
-                    # Get current video timestamp
-                    curr_video_time = self.page.run_js("return document.querySelector('video').currentTime;")
                     
-                    # De-clutter YouTube UI TRANSIENTLY to prevent OCR noise
-                    # We hide things, take the shot, and show them back to avoid breaking ad-detection in next loop
-                    self.page.run_js("""
-                        const selectors = [
-                            '#header', '#secondary', '#comments', '#meta', '#info', 
-                            '.ytp-chrome-top', '.ytp-gradient-top', '.ytp-ce-element', 
-                            'ytd-enforcement-message-view-model', 'tp-yt-paper-dialog'
-                        ];
-                        window._katana_hidden = [];
-                        selectors.forEach(sel => {
-                            const el = document.querySelector(sel);
-                            if (el && el.style.display !== 'none') {
-                                window._katana_hidden.push({el, old: el.style.display});
-                                el.style.display = 'none';
-                            }
-                        });
-                    """)
+                    curr_video_time = self.page.run_js("return document.querySelector('video').currentTime;")
                     
                     frame_name = f"frame_{frames_saved:04d}.png"
                     frame_path = os.path.join(self.output_dir, frame_name)
                     
-                    # Ensure we are capturing ONLY the video pixels
                     try:
                         self.page.ele('tag:video').get_screenshot(path=frame_path)
                     except:
                         video_node.get_screenshot(path=frame_path)
 
-                    # Restore UI visibility immediately
-                    self.page.run_js("""
-                        if (window._katana_hidden) {
-                            window._katana_hidden.forEach(item => {
-                                item.el.style.display = item.old;
-                            });
-                        }
-                    """)
-                    
-                    # 4. Change Detection (Hybrid)
-                    curr_hist = self._get_histogram(frame_path)
                     ocr_path = self._preprocess_for_ocr(frame_path)
                     curr_text = self._get_text(ocr_path)
-                    curr_text_len = len(curr_text)
-                    curr_time = time.time()
-                    
-                    self.is_terminal_mode = self.is_terminal_window(frame_path)
+                    curr_hist = self._get_histogram(frame_path)
                     
                     should_save = False
-                    reason = ""
-                    
                     if self.last_histogram is None:
                         should_save = True
-                        reason = "Initial frame"
                     else:
                         dist = cv2.compareHist(self.last_histogram, curr_hist, cv2.HISTCMP_BHATTACHARYYA)
-                        if dist > 0.005: # More sensitive threshold
+                        if dist > 0.005 or abs(len(curr_text) - self.last_text_len) > 5:
                             should_save = True
-                            reason = f"Visual change ({dist:.3f})"
-                        
-                        len_diff = abs(curr_text_len - self.last_text_len)
-                        if len_diff > 5: # More sensitive
-                            should_save = True
-                            reason = f"Text change ({len_diff})"
-                        
-                        if self.is_terminal_mode and (curr_time - self.last_capture_time > 1.5):
-                            if len_diff > 2:
-                                should_save = True
-                                reason = "Terminal update"
 
                     if should_save and not self.is_ad_content(frame_path, curr_text):
-                        self.logger.info(f"[+] Captured frame {frames_saved} - T:{curr_video_time:.1f}s - Reason: {reason}")
-                        
                         raw_results.append({
                             "timestamp": curr_video_time,
                             "ocr_text": curr_text,
-                            "is_terminal": self.is_terminal_mode
+                            "is_terminal": self.is_terminal_window(frame_path)
                         })
                         frames_saved += 1
-                        
                         self.last_histogram = curr_hist
-                        self.last_text_len = curr_text_len
-                        self.last_capture_time = curr_time
+                        self.last_text_len = len(curr_text)
                     
-                    # Clean up images immediately to save space
                     if os.path.exists(frame_path): os.remove(frame_path)
                     if os.path.exists(ocr_path): os.remove(ocr_path)
-                
-                # Check for transcripts
-                self._process_timedtext()
-                
-                time.sleep(1/3) # Moderate sampling rate
-                
+
+                # 4. Generator Chunking Logic
+                if curr_video_time >= last_chunk_video_time + chunk_interval:
+                    chunk_data = self._process_current_chunk(raw_results, last_chunk_video_time, curr_video_time)
+                    if chunk_data:
+                        self.logger.info(f"[*] Yielding chunk at {int(curr_video_time)}s")
+                        yield chunk_data
+                    last_chunk_video_time = curr_video_time
+
+                time.sleep(self.screenshot_interval)
+
             except Exception as e:
-                self.logger.error(f"[-] Loop iteration error: {e}")
+                self.logger.error(f"[!] Scraper loop error: {e}")
                 time.sleep(1)
 
-        self.logger.info(f"[*] Raw capture complete. Processing final transcripts...")
-        self._process_timedtext()
-        
-        chunked_results = self.chunk_results(raw_results, interval=chunk_interval)
+        # Final yield
+        if curr_video_time > last_chunk_video_time:
+            chunk_data = self._process_current_chunk(raw_results, last_chunk_video_time, curr_video_time)
+            if chunk_data:
+                yield chunk_data
         
         self.page.quit()
-        return chunked_results
+
+    def _process_current_chunk(self, results, start_t, end_t):
+        """Helper to slice results and transcripts for a specific time range."""
+        chunk_results = [r for r in results if start_t <= r["timestamp"] < end_t]
+        chunk_transcripts = [s for s in self.transcript_segments if start_t <= s["start"] < end_t]
+        
+        if not chunk_results and not chunk_transcripts:
+            return None
+            
+        return {
+            "start": start_t,
+            "end": end_t,
+            "visuals": chunk_results,
+            "transcripts": chunk_transcripts
+        }
+
 
 if __name__ == "__main__":
     import argparse
